@@ -6,10 +6,30 @@
   <title>高德地图多点规划工具</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Amap JS API -->
+  <!-- Amap JS API - Replace YOUR_AMAP_API_KEY with your actual key from https://lbs.amap.com/ -->
   <script type="text/javascript" src="https://webapi.amap.com/maps?v=2.0&key=YOUR_AMAP_API_KEY"></script>
   <!-- Amap UI Library -->
   <script type="text/javascript" src="https://webapi.amap.com/ui/1.1/main.js"></script>
+  <style>
+    @media (max-width: 1024px) {
+      .flex.h-full {
+        flex-direction: column;
+        height: auto;
+        min-height: 100vh;
+      }
+      .w-\[30\%\], .w-\[40\%\] {
+        width: 100% !important;
+      }
+      .w-\[40\%\] {
+        min-height: 500px;
+        order: -1;
+      }
+      .border-l, .border-r {
+        border: none !important;
+        border-top: 1px solid #e5e7eb !important;
+      }
+    }
+  </style>
 </head>
 <body class="h-screen overflow-hidden bg-gray-50">
   <!-- 3 Column Layout -->
@@ -39,6 +59,11 @@
       <!-- Groups List -->
       <div id="groupsList" class="space-y-4">
         <!-- Groups will be dynamically added here -->
+      </div>
+
+      <div class="mt-6 pt-4 border-t border-gray-200 text-xs text-gray-500">
+        <p class="mb-1">💡 提示：Ctrl+Enter 快速添加地点组</p>
+        <p>点击地图上的标记点作为起点自动计算路线</p>
       </div>
     </div>
 

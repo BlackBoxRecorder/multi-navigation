@@ -91,6 +91,13 @@ class LocationManager {
       return null;
     }
 
+    // Show failed locations in toast
+    const failedLocations = results.filter(r => !r.success);
+    if (failedLocations.length > 0) {
+      console.warn('Failed locations:', failedLocations);
+      showToast(`搜索失败的地点: ${failedLocations.map(f => f.name).join(', ')}`, 'warning');
+    }
+
     // Fit map to all markers in this group
     const markers = mapManager.markers.filter(m => m.groupIndex === groupIndex);
     if (markers.length > 0) {
