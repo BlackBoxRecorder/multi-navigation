@@ -2,6 +2,7 @@ import { mapManager } from './map.js';
 import { uiManager } from './ui.js';
 import { showToast } from './utils.js';
 import { locationManager } from './location.js';
+import { routeManager } from './route.js';
 
 async function initApp() {
   try {
@@ -9,10 +10,11 @@ async function initApp() {
     showToast('地图加载成功', 'success');
 
     // Listen for marker selection events
-    window.addEventListener('markerSelected', (e) => {
+    window.addEventListener('markerSelected', async (e) => {
       const { location } = e.detail;
       uiManager.updateSelectedOrigin(location);
-      // Route calculation will be added in Task 6
+      // Calculate all routes from selected origin
+      await routeManager.calculateAllRoutes(location);
     });
 
     // Listen for group added events

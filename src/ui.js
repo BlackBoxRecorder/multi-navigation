@@ -1,5 +1,6 @@
 import { locationManager } from './location.js';
 import { showToast } from './utils.js';
+import { routeManager } from './route.js';
 
 class UIManager {
   constructor() {
@@ -141,8 +142,17 @@ class UIManager {
   }
 
   async handleCalcOptimalRoute() {
-    // This will be implemented in Task 6
-    showToast('最优路线功能即将上线', 'info');
+    this.calcOptimalRouteBtn.disabled = true;
+    this.calcOptimalRouteBtn.textContent = '计算中...';
+
+    try {
+      await routeManager.calculateOptimalMultiPointRoute();
+    } catch (error) {
+      console.error('Optimal route error:', error);
+    } finally {
+      this.calcOptimalRouteBtn.disabled = false;
+      this.calcOptimalRouteBtn.textContent = '计算最优路线（经过所有地点）';
+    }
   }
 }
 
