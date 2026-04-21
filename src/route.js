@@ -186,6 +186,78 @@ class RouteManager {
 
     showToast(`已显示到 ${routeResult.destination.name} 的路线`, 'success');
   }
+
+  // Calculate optimal route visiting multiple points (driving mode only)
+  async calculateOptimalMultiPointRoute() {
+    const allLocations = locationManager.getAllLocations();
+
+    if (allLocations.length < 2) {
+      showToast('至少需要2个地点才能计算最优路线', 'warning');
+      return null;
+    }
+
+    if (allLocations.length > 16) {
+      showToast('最优路线计算最多支持16个地点', 'warning');
+      return null;
+    }
+
+    showToast('正在计算最优路线...', 'info');
+
+    try {
+      // Use Amap Driving Route Planning API with waypoints
+      const origin = [allLocations[0].longitude, allLocations[0].latitude];
+      const destination = [allLocations[allLocations.length - 1].longitude, allLocations[allLocations.length - 1].latitude];
+      const waypoints = allLocations.slice(1, -1).map(loc => [loc.longitude, loc.latitude]);
+
+      return new Promise((resolve, reject) => {
+        AMap.plugin('AMap.Driving', () => {
+          const driving = new AMap.Driving({
+            map: null,
+            policy: AMap.DRIVING_POLICY_LEAST_TIME,
+            waypoints: waypoints,
+            showTraffic: false
+          });
+
+          driving.search(origin, destination, (status, result) => {
+            if (status === 'complete' && result.routes && result.routes.length > 0) {
+              const route = result.routes[0];
+
+              // Clear existing routes
+              mapManager.clearRouteLines();
+
+              // Add optimal route to map
+              mapManager.addRouteLine(route.path, '#f97316', 5, 0.8);
+
+              // Show result
+              const resultContainer = document.getElementById('optimalRouteResult');
+              const distanceEl = document.getElementById('optimalRouteDistance');
+              const timeEl = document.getElementById('optimalRouteTime');
+
+              distanceEl.textContent = `总距离: ${formatDistance(route.distance)}`;
+              timeEl.textContent = `预计时间: ${formatDuration(route.duration)}`;
+              resultContainer.classList.remove('hidden');
+
+              showToast('最优路线计算完成', 'success');
+
+              resolve({
+                distance: route.distance,
+                duration: route.duration,
+                path: route.path,
+                steps: route.steps
+              });
+            } else {
+              showToast('最优路线计算失败', 'error');
+              reject(new Error('Route calculation failed'));
+            }
+          });
+        });
+      });
+    } catch (error) {
+      console.error('Optimal route calculation error:', error);
+      showToast('最优路线计算失败', 'error');
+      return null;
+    }
+  }
 }
 
 // Export singleton instance
