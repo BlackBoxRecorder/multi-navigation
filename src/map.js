@@ -399,12 +399,13 @@ class MapManager {
 
   // --- Route Line Methods ---
 
-  addRouteLine(path, color = "#3b82f6", width = 4, opacity = 0.8) {
+  addRouteLine(path, color = "#3b82f6", width = 6, opacity = 0.8) {
     const polyline = new AMap.Polyline({
       path: path,
       strokeColor: color,
       strokeWeight: width,
       strokeOpacity: opacity,
+      showDir: true,
       zIndex: 50,
     });
 

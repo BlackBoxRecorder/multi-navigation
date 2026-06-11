@@ -299,8 +299,9 @@ class RouteManager {
       const polyline = new AMap.Polyline({
         path: item.pathArray,
         strokeColor: color,
-        strokeWeight: 4,
+        strokeWeight: 6,
         strokeOpacity: 0.8,
+        showDir: true,
         zIndex: 50,
       });
 
@@ -454,8 +455,9 @@ class RouteManager {
       const polyline = new AMap.Polyline({
         path: item.pathArray,
         strokeColor: color,
-        strokeWeight: 4,
+        strokeWeight: 6,
         strokeOpacity: 0.8,
+        showDir: true,
         zIndex: 50,
       });
 
