@@ -109,6 +109,42 @@
     #routeDetailPanel .amap-lib-transfer .plan-title {
       font-size: 14px;
     }
+
+    /* --- Map Controls Styling --- */
+
+    /* ToolBar - zoom + location buttons */
+    .amap-toolbar {
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+      border: 1px solid #e5e7eb;
+    }
+    .amap-toolbar .amap-toolbar-btn {
+      transition: background-color 0.15s;
+    }
+    .amap-toolbar .amap-toolbar-btn:hover {
+      background-color: #f3f4f6;
+    }
+
+    /* MapType - layer switcher, positioned bottom-right above toolbar */
+    .amap-maptype {
+       transform: translate(-10px, -115px) !important; 
+      border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
+      border: 1px solid #e5e7eb;
+      font-size: 12px;
+      background: white;
+    }
+    .amap-maptype .amap-ctrl-list-layer {
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .amap-maptype .amap-maptype-control-item {
+      transition: background-color 0.15s;
+    }
+    .amap-maptype .amap-maptype-control-item:hover {
+      background-color: #f3f4f6;
+    }
   </style>
 </head>
 

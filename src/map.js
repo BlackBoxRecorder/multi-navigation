@@ -43,6 +43,24 @@ class MapManager {
           });
         });
 
+        // Add map type switcher (standard/satellite) - bottom-right via CSS transform
+        AMap.plugin("AMap.MapType", () => {
+          const mapType = new AMap.MapType({
+            defaultType: 0,
+            position: "RB",
+          });
+          this.map.addControl(mapType);
+        });
+
+        // Add zoom/location toolbar - bottom-right, anchored at corner
+        AMap.plugin("AMap.ToolBar", () => {
+          const toolBar = new AMap.ToolBar({
+            position: "LB",
+            offset: [10, 30],
+          });
+          this.map.addControl(toolBar);
+        });
+
         this.initSearchBar();
         this.initPoiClickListener();
 
@@ -288,12 +306,13 @@ class MapManager {
     const marker = new AMap.Marker({
       position: position,
       title: location.name,
-      icon: new AMap.Icon({
-        size: new AMap.Size(24, 36),
-        image:
-          "https://a.amap.com/jsapi_demos/static/demo-center/icons/poi-marker-blue.png",
-        imageSize: new AMap.Size(24, 36),
-      }),
+      content:
+        '<div style="width:24px;height:36px;">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36">' +
+        '<path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24C24 5.373 18.627 0 12 0z" ' +
+        'fill="#3b82f6" stroke="#1d4ed8" stroke-width="1.5"/>' +
+        '<circle cx="12" cy="10" r="4.5" fill="white"/>' +
+        "</svg></div>",
       anchor: "bottom-center",
       zIndex: 100,
     });
@@ -330,12 +349,13 @@ class MapManager {
     this.destinationMarker = new AMap.Marker({
       position: position,
       title: "目的地: " + location.name,
-      icon: new AMap.Icon({
-        size: new AMap.Size(30, 42),
-        image:
-          "https://a.amap.com/jsapi_demos/static/demo-center/icons/poi-marker-red.png",
-        imageSize: new AMap.Size(30, 42),
-      }),
+      content:
+        '<div style="width:30px;height:42px;">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="42" viewBox="0 0 30 42">' +
+        '<path d="M15 0C6.716 0 0 6.716 0 15c0 11.25 15 27 15 27s15-15.75 15-27C30 6.716 23.284 0 15 0z" ' +
+        'fill="#ef4444" stroke="#b91c1c" stroke-width="1.5"/>' +
+        '<circle cx="15" cy="13" r="5.5" fill="white"/>' +
+        "</svg></div>",
       anchor: "bottom-center",
       zIndex: 200,
     });
