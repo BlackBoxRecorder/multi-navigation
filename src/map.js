@@ -313,7 +313,6 @@ class MapManager {
           showToast("请先添加收藏地点", "warning");
           return;
         }
-        this.addDestinationMarker(poiData);
         window.dispatchEvent(
           new CustomEvent("destinationSet", {
             detail: { destination: poiData },

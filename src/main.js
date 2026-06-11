@@ -138,6 +138,9 @@ async function initApp() {
       // Clear old routes on map
       mapManager.clearRouteLines();
 
+      // Add destination marker (only after validation passes)
+      mapManager.addDestinationMarker(destination);
+
       // Calculate routes
       const results = await routeManager.calculateRoutesToDestination(
         destination,
