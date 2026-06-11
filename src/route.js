@@ -47,6 +47,8 @@ class RouteManager {
     this.activeMode = TRANSPORT_MODES.DRIVING;
     this.currentDestination = null;
     this.currentRouteLines = []; // Track rendered lines for highlighting
+    this._transitService = null; // AMap.Transfer instance for native panel
+    this._transitDetailResultIndex = null; // Which origin's transit detail is showing
   }
 
   // Plugin name and constructor class mapping for each transport mode
@@ -90,7 +92,12 @@ class RouteManager {
 
           const options = { map: null };
           if (mode === "driving")
-            options.policy = AMap.DRIVING_POLICY_LEAST_TIME;
+            options.policy = AMap.DrivingPolicy.LEAST_TIME;
+          if (mode === "transit") {
+            // city is REQUIRED for transit route planning
+            options.city = destination.city || origin.city || "北京";
+            options.policy = AMap.TransferPolicy.LEAST_TIME;
+          }
 
           const routeService = new ServiceClass(options);
 
@@ -98,22 +105,71 @@ class RouteManager {
             originPoint,
             destinationPoint,
             (status, result) => {
-              if (
-                status === "complete" &&
-                result.routes &&
-                result.routes.length > 0
-              ) {
-                const route = result.routes[0];
-                // AMap v2 uses `time` (seconds), not `duration`
-                // For transit: path must be assembled from segments (no top-level path)
-                resolve({
-                  mode,
-                  distance: route.distance,
-                  duration: route.time,
-                  path: mode === "transit" ? route.segments : route.path,
-                  steps: mode === "transit" ? route.segments : route.steps,
-                });
-              } else if (status === "no_data") {
+              if (status === "complete") {
+                let path, distance, duration;
+
+                if (mode === "transit") {
+                  // Transit: result.plans (NOT result.routes)
+                  if (result.plans && result.plans.length > 0) {
+                    const plan = result.plans[0];
+                    distance = plan.distance;
+                    duration = plan.time;
+                    path = [];
+                    plan.segments.forEach((segment) => {
+                      // Walking segments within transit route
+                      if (segment.walking && segment.walking.steps) {
+                        segment.walking.steps.forEach((step) => {
+                          if (step.path) path.push(...step.path);
+                        });
+                      }
+                      // Transit (bus/subway) segments
+                      // API structure: segment.transit.path is directly an array of LngLat
+                      if (segment.transit && segment.transit.path) {
+                        path.push(...segment.transit.path);
+                      }
+                    });
+                  } else {
+                    reject(new Error("NO_DATA"));
+                    return;
+                  }
+                } else if (mode === "bicycling") {
+                  // Riding: route.rides (NOT route.steps)
+                  if (result.routes && result.routes.length > 0) {
+                    const route = result.routes[0];
+                    distance = route.distance;
+                    duration = route.time;
+                    path = [];
+                    if (route.rides) {
+                      route.rides.forEach((ride) => {
+                        if (ride.path) path.push(...ride.path);
+                      });
+                    }
+                  } else {
+                    reject(new Error("NO_DATA"));
+                    return;
+                  }
+                } else {
+                  // Driving / Walking: route.steps[].path
+                  if (result.routes && result.routes.length > 0) {
+                    const route = result.routes[0];
+                    distance = route.distance;
+                    duration = route.time;
+                    path = [];
+                    if (route.steps) {
+                      route.steps.forEach((step) => {
+                        if (step.path) path.push(...step.path);
+                      });
+                    }
+                  } else {
+                    reject(new Error("NO_DATA"));
+                    return;
+                  }
+                }
+
+                // For transit mode, also return the raw result for detail panel rendering
+                const rawResult = mode === "transit" ? result : null;
+                resolve({ mode, distance, duration, path, rawResult });
+              } else if (status === "no_data" || status === "error") {
                 reject(new Error("NO_DATA"));
               } else {
                 reject(new Error(`路线计算失败: ${destination.name}`));
@@ -123,6 +179,13 @@ class RouteManager {
         });
       });
     });
+  }
+
+  // Check if a route result can be rendered on the map (has valid path data)
+  _isRouteRenderable(result, mode) {
+    const route = result.routes[mode];
+    if (!route) return false;
+    return Array.isArray(route.path) && route.path.length > 0;
   }
 
   // Calculate routes from all my-locations to a destination
@@ -199,6 +262,11 @@ class RouteManager {
   switchTransportMode(mode) {
     this.activeMode = mode;
 
+    // Close transit detail panel when switching away from transit
+    if (mode !== TRANSPORT_MODES.TRANSIT) {
+      this.hideTransitDetailPanel();
+    }
+
     // Clear old route lines
     mapManager.clearRouteLines();
     this.currentRouteLines = [];
@@ -208,52 +276,14 @@ class RouteManager {
 
     this.currentResults.forEach((result, index) => {
       const route = result.routes[mode];
-      if (route && route.path) {
-        // Compute Polyline-compatible path array
-        let pathArray;
-        if (mode === "transit") {
-          // Transit: path is route.segments, assemble from walking + bus steps
-          pathArray = [];
-          if (Array.isArray(route.path)) {
-            route.path.forEach((segment) => {
-              // Each segment may have walking steps and/or bus lines
-              if (segment.walking && segment.walking.steps) {
-                segment.walking.steps.forEach((step) => {
-                  if (step.path && Array.isArray(step.path)) {
-                    pathArray.push(...step.path);
-                  }
-                });
-              }
-              if (segment.transit && segment.transit.segments) {
-                segment.transit.segments.forEach((subSeg) => {
-                  if (subSeg.path && Array.isArray(subSeg.path)) {
-                    pathArray.push(...subSeg.path);
-                  }
-                });
-              }
-              if (
-                segment.bus &&
-                segment.bus.path &&
-                Array.isArray(segment.bus.path)
-              ) {
-                pathArray.push(...segment.bus.path);
-              }
-            });
-          }
-        } else {
-          // Driving/Walking/Riding: route.path is [[lng,lat], ...] — use as-is
-          pathArray = route.path;
-        }
-
-        if (pathArray.length > 0) {
-          hasAnyRoute = true;
-          routesToRender.push({
-            index,
-            origin: result.origin,
-            route,
-            pathArray,
-          });
-        }
+      if (route && route.path && route.path.length > 0) {
+        hasAnyRoute = true;
+        routesToRender.push({
+          index,
+          origin: result.origin,
+          route,
+          pathArray: route.path,
+        });
       }
     });
 
@@ -289,6 +319,143 @@ class RouteManager {
     );
   }
 
+  // --- Transit Detail Panel on Map (Amap Native) ---
+
+  // Show the transit detail panel using Amap's native Transfer + panel rendering
+  showTransitDetailPanel(resultIndex) {
+    const result = this.currentResults[resultIndex];
+    if (!result) return;
+
+    // Close previous panel first (without redrawing — we'll redraw after new panel)
+    this._closeTransitPanelOnly();
+
+    // Clear overview route lines (native panel draws its own routes)
+    mapManager.clearRouteLines();
+    this.currentRouteLines = [];
+
+    // Show the panel wrapper
+    const wrapper = document.getElementById("transitPanelWrapper");
+    if (wrapper) wrapper.classList.remove("hidden");
+
+    // Clear panel content (in case of previous residual)
+    const panelEl = document.getElementById("transitPanel");
+    if (panelEl) panelEl.innerHTML = "";
+
+    // Update title
+    const title = document.getElementById("transitPanelTitle");
+    if (title) title.textContent = `从 ${result.origin.name}`;
+
+    this._transitDetailResultIndex = resultIndex;
+
+    // Use Amap native Transfer + panel (auto renders plans, routes, handles plan switching)
+    AMap.plugin(["AMap.Transfer", "AMap.Adaptor"], () => {
+      const transOptions = {
+        map: mapManager.map,
+        city:
+          (this.currentDestination && this.currentDestination.city) ||
+          result.origin.city ||
+          "北京",
+        panel: "transitPanel",
+        policy: AMap.TransferPolicy.LEAST_TIME,
+        autoFitView: true,
+      };
+
+      const transfer = new AMap.Transfer(transOptions);
+      this._transitService = transfer;
+
+      const originPoint = [result.origin.longitude, result.origin.latitude];
+      const destPoint = [
+        this.currentDestination.longitude,
+        this.currentDestination.latitude,
+      ];
+
+      transfer.search(originPoint, destPoint, (status) => {
+        if (status === "complete") {
+          // Amap native panel handles everything: plan tabs, route drawing, station markers
+        } else {
+          showToast("公交路线查询失败", "error");
+          this.hideTransitDetailPanel();
+        }
+      });
+    });
+
+    // Bind close button
+    const closeBtn = document.getElementById("transitPanelClose");
+    if (closeBtn) {
+      closeBtn.onclick = () => this.hideTransitDetailPanel();
+    }
+  }
+
+  // Hide the transit detail panel
+  hideTransitDetailPanel() {
+    this._closeTransitPanelOnly();
+
+    // Redraw overview transit routes if still in transit mode
+    if (
+      this.activeMode === TRANSPORT_MODES.TRANSIT &&
+      this.currentResults.length > 0
+    ) {
+      mapManager.clearRouteLines();
+      this.currentRouteLines = [];
+      // Re-render overview without going through switchTransportMode (avoids recursion)
+      this._renderTransitOverviewRoutes();
+    }
+  }
+
+  // Internal: close panel + clear Transfer instance, without redrawing overview
+  _closeTransitPanelOnly() {
+    const wrapper = document.getElementById("transitPanelWrapper");
+    if (wrapper) wrapper.classList.add("hidden");
+
+    if (this._transitService) {
+      this._transitService.clear();
+      this._transitService = null;
+    }
+
+    this._transitDetailResultIndex = null;
+  }
+
+  // Internal: render overview transit routes (extracted from switchTransportMode for reuse)
+  _renderTransitOverviewRoutes() {
+    const mode = TRANSPORT_MODES.TRANSIT;
+    const routesToRender = [];
+    let hasAnyRoute = false;
+
+    this.currentResults.forEach((result, index) => {
+      const route = result.routes[mode];
+      if (route && route.path && route.path.length > 0) {
+        hasAnyRoute = true;
+        routesToRender.push({
+          index,
+          origin: result.origin,
+          route,
+          pathArray: route.path,
+        });
+      }
+    });
+
+    if (!hasAnyRoute) return;
+
+    routesToRender.forEach((item, paletteIdx) => {
+      const palette = ROUTE_PALETTE[paletteIdx % ROUTE_PALETTE.length];
+      const color = MODE_COLORS[mode];
+
+      const polyline = new AMap.Polyline({
+        path: item.pathArray,
+        strokeColor: color,
+        strokeWeight: palette.width,
+        strokeOpacity: palette.opacity,
+        zIndex: 50,
+      });
+
+      polyline._routeIndex = item.index;
+      mapManager.map.add(polyline);
+      this.currentRouteLines.push(polyline);
+    });
+
+    mapManager.map.setFitView(this.currentRouteLines);
+  }
+
   // Highlight a single route, dim others
   highlightSingleRoute(routeIndex) {
     this.currentRouteLines.forEach((line) => {
@@ -316,6 +483,9 @@ class RouteManager {
   renderResultsPanel(destination, results, activeMode) {
     const container = document.getElementById("routeResultsList");
     if (!container) return;
+
+    // Close transit detail panel when new results come in
+    this.hideTransitDetailPanel();
 
     this.activeMode = activeMode || TRANSPORT_MODES.DRIVING;
     this.currentResults = results;
@@ -347,7 +517,7 @@ class RouteManager {
 
     bar.innerHTML = modes
       .map((mode) => {
-        const hasData = results.some((r) => r.routes[mode] !== null);
+        const hasData = results.some((r) => this._isRouteRenderable(r, mode));
         const isActive = mode === this.activeMode;
 
         return `
@@ -385,7 +555,9 @@ class RouteManager {
     const container = document.getElementById("routeResultsList");
     if (!container) return;
 
-    const validResults = results.filter((r) => r.routes[mode] !== null);
+    const validResults = results.filter((r) =>
+      this._isRouteRenderable(r, mode),
+    );
 
     if (validResults.length === 0) {
       container.innerHTML = `<p class="text-sm text-gray-500 italic">暂无${MODE_NAMES[mode]}路线数据</p>`;
@@ -440,6 +612,11 @@ class RouteManager {
           "ring-1",
           "ring-blue-300",
         );
+
+        // For transit mode, show detail panel on the map
+        if (mode === TRANSPORT_MODES.TRANSIT) {
+          this.showTransitDetailPanel(routeIndex);
+        }
       });
     });
   }

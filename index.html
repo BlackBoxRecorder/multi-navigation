@@ -17,6 +17,53 @@
   <!-- Amap UI Library -->
   <script type="text/javascript" src="https://webapi.amap.com/ui/1.1/main.js"></script>
   <style>
+    /* Resizable sidebar handles */
+    .resize-handle {
+      width: 5px;
+      cursor: col-resize;
+      background: transparent;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 30;
+      transition: background-color 0.15s;
+    }
+    .resize-handle:hover,
+    .resize-handle.active {
+      background-color: #3b82f6;
+    }
+    body.resizing {
+      cursor: col-resize !important;
+      user-select: none;
+    }
+    body.resizing * {
+      cursor: col-resize !important;
+      user-select: none;
+    }
+
+    /* POI info window close button */
+    .poi-info-close-btn {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      color: #9ca3af;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.15s;
+      background: #f3f4f6;
+      border: none;
+      line-height: 1;
+    }
+    .poi-info-close-btn:hover {
+      background: #e5e7eb;
+      color: #4b5563;
+    }
+
     @media (max-width: 1024px) {
       .flex.h-full {
         flex-direction: column;
@@ -24,12 +71,16 @@
         min-height: 100vh;
       }
 
-      .w-\[30\%\],
-      .w-\[40\%\] {
+      .resize-handle {
+        display: none;
+      }
+
+      #leftPanel,
+      #rightPanel {
         width: 100% !important;
       }
 
-      .w-\[40\%\] {
+      #rightPanel {
         min-height: 500px;
         order: -1;
       }
@@ -40,41 +91,74 @@
         border-top: 1px solid #e5e7eb !important;
       }
     }
+
+    /* Amap native route detail panel styling */
+    #routeDetailPanel .amap-call {
+      background-color: #009cf9;
+      border-top-left-radius: 4px;
+      border-top-right-radius: 4px;
+    }
+    #routeDetailPanel .amap-lib-transfer,
+    #routeDetailPanel .amap-lib-driving,
+    #routeDetailPanel .amap-lib-walking,
+    #routeDetailPanel .amap-lib-riding {
+      border-bottom-left-radius: 4px;
+      border-bottom-right-radius: 4px;
+      overflow: hidden;
+    }
+    #routeDetailPanel .amap-lib-transfer .plan-title {
+      font-size: 14px;
+    }
   </style>
 </head>
 
 <body class="h-screen overflow-hidden bg-gray-50">
   <!-- 3 Column Layout -->
-  <div class="flex h-full">
-    <!-- Left Column: Location Input Panel -->
-    <div class="w-[30%] h-full border-r border-gray-200 bg-white p-4 overflow-y-auto">
+  <div id="mainLayout" class="flex h-full">
+    <!-- Left Column: location Input Panel -->
+    <div id="leftPanel" class="h-full border-r border-gray-200 bg-white p-4 overflow-y-auto" style="width: 240px; flex-shrink: 0;">
       <h2 class="text-xl font-bold mb-4 text-gray-800">我的地点</h2>
-
+  
       <!-- My Locations List -->
       <div id="myLocationsList" class="space-y-2">
         <!-- Locations will be dynamically added here -->
       </div>
-
+  
       <div class="mt-6 pt-4 border-t border-gray-200 text-xs text-gray-500">
-        <p>💡 点击地图上的 POI 即可收藏到我的地点</p>
+        <p>💡 右键点击地图上的地点即可收藏到我的地点</p>
       </div>
     </div>
-
+  
+    <!-- Left Resize Handle -->
+    <div id="leftResizeHandle" class="resize-handle"></div>
+  
     <!-- Middle Column: Map View -->
-    <div class="w-[40%] h-full relative">
+    <div id="centerPanel" class="h-full relative" style="flex: 1; min-width: 200px;">
       <!-- Map Search Bar -->
       <div class="absolute top-4 left-1/2 -translate-x-1/2 z-10 w-[90%] max-w-md">
         <input id="mapSearchInput"
           class="w-full p-3 rounded-lg shadow-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           placeholder="搜索城市、地点、景区...">
       </div>
-
+  
       <!-- Map Container -->
-      <div id="mapContainer" class="w-full h-full"></div>
+      <div id="mapContainer" class="w-full h-full relative">
+        <!-- Transit Panel Wrapper (floating on map, uses Amap native panel) -->
+        <div id="transitPanelWrapper" class="absolute top-4 right-4 z-20 hidden" style="width: 280px;">
+          <div class="flex items-center justify-between mb-1 px-1">
+            <span id="transitPanelTitle" class="text-xs text-gray-500 truncate"></span>
+            <button id="transitPanelClose" class="text-gray-400 hover:text-gray-600 text-xs px-1 transition-colors" title="关闭">✕ 关闭</button>
+          </div>
+          <div id="transitPanel" class="bg-white rounded-lg shadow-xl overflow-hidden" style="max-height: 70vh; overflow-y: auto;"></div>
+        </div>
+      </div>
     </div>
-
+  
+    <!-- Right Resize Handle -->
+    <div id="rightResizeHandle" class="resize-handle"></div>
+  
     <!-- Right Column: Path Planning Panel -->
-    <div class="w-[30%] h-full border-l border-gray-200 bg-white p-4 overflow-y-auto">
+    <div id="rightPanel" class="h-full border-l border-gray-200 bg-white p-4 overflow-y-auto" style="width: 420px; flex-shrink: 0;">
       <h2 class="text-xl font-bold mb-4 text-gray-800">路径规划</h2>
 
       <!-- Selected Destination Info -->

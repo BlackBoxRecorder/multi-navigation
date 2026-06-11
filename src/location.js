@@ -1,10 +1,42 @@
 import { showToast } from "./utils.js";
 
 const MAX_LOCATIONS = 20;
+const STORAGE_KEY = "mapdemo_my_locations";
 
 class LocationManager {
   constructor() {
     this.locations = [];
+  }
+
+  // Save locations to localStorage
+  saveToStorage() {
+    try {
+      const data = this.locations.map((loc) => ({
+        name: loc.name,
+        address: loc.address,
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        city: loc.city || "",
+        district: loc.district || "",
+      }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {
+      console.warn("保存地点到 localStorage 失败:", e);
+    }
+  }
+
+  // Load locations from localStorage
+  loadFromStorage() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (Array.isArray(data)) {
+        this.locations = data.slice(0, MAX_LOCATIONS);
+      }
+    } catch (e) {
+      console.warn("从 localStorage 加载地点失败:", e);
+    }
   }
 
   // Search for a location using Amap POI API

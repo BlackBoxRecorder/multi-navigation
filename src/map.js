@@ -75,39 +75,44 @@ class MapManager {
   // --- POI Click Listener ---
 
   initPoiClickListener() {
-    this.map.on("click", (e) => {
-      // Check if click is near existing markers (screen-distance based)
-      if (this.isClickNearMarker(e)) return;
-      this.closePoiInfoWindow();
+    // Disable default right-click context menu on the map container
+    const container = this.map.getContainer();
+    container.addEventListener("contextmenu", (e) => e.preventDefault());
 
+    this.map.on("rightclick", (e) => {
       const lnglat = e.lnglat;
+
+      // Check if right-click is near an existing saved marker
+      const nearMarkerData = this.getNearMarkerData(e);
+      if (nearMarkerData) {
+        this.closePoiInfoWindow();
+        const markerLngLat = new AMap.LngLat(
+          nearMarkerData.longitude,
+          nearMarkerData.latitude,
+        );
+        this.showPoiInfoWindow(markerLngLat, nearMarkerData);
+        return;
+      }
+
+      this.closePoiInfoWindow();
       this.reverseGeocodeAndSearch(lnglat);
     });
   }
 
-  isClickNearMarker(clickEvent) {
+  // Returns location data if click is near a saved marker, otherwise null
+  getNearMarkerData(clickEvent) {
     const clickPixel = clickEvent.pixel;
     const THRESHOLD_PX = 20;
 
-    // Check all my-location markers
     for (const item of this.markers) {
       const markerPixel = this.map.lngLatToContainer(item.marker.getPosition());
       const dx = clickPixel.x - markerPixel.x;
       const dy = clickPixel.y - markerPixel.y;
-      if (Math.sqrt(dx * dx + dy * dy) < THRESHOLD_PX) return true;
+      if (Math.sqrt(dx * dx + dy * dy) < THRESHOLD_PX) {
+        return item.location;
+      }
     }
-
-    // Check destination marker
-    if (this.destinationMarker) {
-      const destPixel = this.map.lngLatToContainer(
-        this.destinationMarker.getPosition(),
-      );
-      const dx = clickPixel.x - destPixel.x;
-      const dy = clickPixel.y - destPixel.y;
-      if (Math.sqrt(dx * dx + dy * dy) < THRESHOLD_PX) return true;
-    }
-
-    return false;
+    return null;
   }
 
   reverseGeocodeAndSearch(lnglat) {
@@ -179,7 +184,8 @@ class MapManager {
     infoDiv.style.transform = "translate(-50%, -120%)";
 
     infoDiv.innerHTML = `
-      <h3 class="font-semibold text-sm text-gray-800 mb-1">${poiData.name}</h3>
+      <button class="poi-info-close-btn close-poi-btn" title="关闭">✕</button>
+      <h3 class="font-semibold text-sm text-gray-800 mb-1 pr-5">${poiData.name}</h3>
       <p class="text-xs text-gray-500 mb-3 truncate max-w-[200px]">${poiData.address || "地址不详"}</p>
       <div class="flex space-x-2">
         <button class="add-location-btn flex-1 text-xs px-3 py-1.5 rounded font-medium transition-colors
@@ -222,6 +228,11 @@ class MapManager {
     };
 
     // Bind button events
+    infoDiv.querySelector(".close-poi-btn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.closePoiInfoWindow();
+    });
+
     infoDiv
       .querySelector(".add-location-btn")
       .addEventListener("click", (e) => {
@@ -393,6 +404,11 @@ class MapManager {
   // Getter for destination
   getDestination() {
     return this.destinationMarker ? this.poiInfoWindow?.poiData || null : null;
+  }
+
+  // Notify map that container size changed (e.g. sidebar resize)
+  refreshSize() {
+    window.dispatchEvent(new Event("resize"));
   }
 }
 
