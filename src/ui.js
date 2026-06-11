@@ -1,20 +1,24 @@
 import { locationManager } from "./location.js";
 import { mapManager } from "./map.js";
+import { routeManager } from "./route.js";
+import { showToast } from "./utils.js";
 
 class UIManager {
   constructor() {
     this.myLocationsList = document.getElementById("myLocationsList");
     this.routeResultsList = document.getElementById("routeResultsList");
     this.destinationDisplay = document.getElementById("destinationDisplay");
+    this.clearAllBtn = document.getElementById("clearAllLocationsBtn");
 
     this.bindEvents();
     this.renderMyLocations();
   }
 
   bindEvents() {
-    // No DOM events needed at constructor level —
-    // interactions are handled via CustomEvent listeners in main.js
-    // and inline click handlers in map.js info window / route.js mode switches
+    // Bind clear all button
+    if (this.clearAllBtn) {
+      this.clearAllBtn.addEventListener("click", () => this.handleClearAll());
+    }
   }
 
   // Render the flat "我的地点" list in the left panel
@@ -39,11 +43,18 @@ class UIManager {
     }
 
     this.myLocationsList.innerHTML = locations
-      .map(
-        (loc, index) => `
-      <div class="flex items-start justify-between p-3 border border-gray-200 rounded-lg bg-white hover:border-blue-200 transition-colors">
-        <div class="flex-1 min-w-0 mr-2">
-          <p class="font-medium text-sm text-gray-800 truncate">${loc.name}</p>
+      .map((loc, index) => {
+        // Address dedup: if name starts with address, trim the prefix
+        let displayName = loc.name;
+        if (loc.address && loc.name.startsWith(loc.address)) {
+          displayName = loc.name.replace(loc.address, "").trim();
+        }
+
+        return `
+      <div class="flex items-center p-3 border border-gray-200 rounded-lg bg-white hover:border-blue-200 transition-colors">
+        <input type="checkbox" class="my-loc-checkbox flex-shrink-0 w-4 h-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400" data-index="${index}">
+        <div class="flex-1 min-w-0 ml-2 mr-2">
+          <p class="font-medium text-sm text-gray-800 truncate">${displayName}</p>
           <p class="text-xs text-gray-500 mt-0.5 truncate">${loc.address || "地址不详"}</p>
         </div>
         <button class="remove-location-btn flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors p-1"
@@ -54,8 +65,8 @@ class UIManager {
           </svg>
         </button>
       </div>
-    `,
-      )
+    `;
+      })
       .join("");
 
     // Bind delete events
@@ -89,6 +100,39 @@ class UIManager {
       // Re-render
       this.renderMyLocations();
     }
+  }
+
+  // Get indices of selected (checked) locations
+  getSelectedLocationIndices() {
+    const checkboxes = this.myLocationsList.querySelectorAll(
+      ".my-loc-checkbox:checked",
+    );
+    return Array.from(checkboxes).map((cb) => parseInt(cb.dataset.index));
+  }
+
+  // Handle clear all button click
+  handleClearAll() {
+    const locations = locationManager.getAllLocations();
+    if (locations.length === 0) {
+      showToast("没有可清空的地点", "warning");
+      return;
+    }
+
+    if (!confirm("确定清空所有收藏地点吗？此操作不可恢复。")) return;
+
+    // Clear route state first (removes route lines from map)
+    routeManager.resetState();
+
+    // Clear map markers
+    mapManager.clearAllMyLocationMarkers();
+    mapManager.clearRouteLines();
+
+    // Clear location data
+    locationManager.clearAll();
+
+    // Re-render
+    this.renderMyLocations();
+    this.showEmptyState();
   }
 
   // Show empty state in right panel

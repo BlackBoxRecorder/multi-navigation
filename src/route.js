@@ -190,8 +190,12 @@ class RouteManager {
     return Array.isArray(route.path) && route.path.length > 0;
   }
 
-  // Calculate routes from all my-locations to a destination
-  async calculateRoutesToDestination(destination, transportMode = null) {
+  // Calculate routes from selected origins (or all my-locations) to a destination
+  async calculateRoutesToDestination(
+    destination,
+    originIndices = null,
+    transportMode = null,
+  ) {
     const allLocations = locationManager.getAllLocations();
 
     if (allLocations.length === 0) {
@@ -199,8 +203,21 @@ class RouteManager {
       return [];
     }
 
+    // Determine origins: use specified indices or all locations
+    let origins;
+    if (originIndices && originIndices.length > 0) {
+      origins = originIndices.map((i) => allLocations[i]).filter(Boolean);
+    } else {
+      origins = allLocations;
+    }
+
+    if (origins.length === 0) {
+      showToast("请至少选择一个地点", "warning");
+      return [];
+    }
+
     // Filter out the destination itself from origins
-    const origins = allLocations.filter(
+    origins = origins.filter(
       (loc) =>
         Math.abs(loc.latitude - destination.latitude) > 0.0001 ||
         Math.abs(loc.longitude - destination.longitude) > 0.0001,
@@ -472,6 +489,15 @@ class RouteManager {
   // Highlight a single route — deprecated, native panel handles this now
   highlightSingleRoute(_routeIndex) {
     // no-op: native route detail panel renders its own route lines
+  }
+
+  // Reset all route state (used when clearing all locations)
+  resetState() {
+    this.hideRouteDetailPanel();
+    this.currentResults = [];
+    this.currentDestination = null;
+    this.currentRouteLines.forEach((line) => mapManager.map.remove(line));
+    this.currentRouteLines = [];
   }
 
   // Reset all route highlights — deprecated

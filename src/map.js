@@ -97,6 +97,21 @@ class MapManager {
     const container = this.map.getContainer();
     container.addEventListener("contextmenu", (e) => e.preventDefault());
 
+    // Cache the currently hovered hotspot POI for right-click
+    this._hotspotCache = null;
+
+    this.map.on("hotspotover", (e) => {
+      this._hotspotCache = {
+        name: e.name,
+        id: e.id,
+        lnglat: e.lnglat,
+      };
+    });
+
+    this.map.on("hotspotout", () => {
+      this._hotspotCache = null;
+    });
+
     this.map.on("rightclick", (e) => {
       const lnglat = e.lnglat;
 
@@ -112,8 +127,14 @@ class MapManager {
         return;
       }
 
-      this.closePoiInfoWindow();
-      this.reverseGeocodeAndSearch(lnglat);
+      // Only show popup if hovering over a map hotspot POI
+      if (this._hotspotCache) {
+        this.closePoiInfoWindow();
+        this.reverseGeocodeForAddress(lnglat, this._hotspotCache.name);
+        return;
+      }
+
+      // Right-click on blank area — do nothing
     });
   }
 
@@ -133,10 +154,10 @@ class MapManager {
     return null;
   }
 
-  reverseGeocodeAndSearch(lnglat) {
+  // Reverse geocode to get an address, using hotspot name as the POI name
+  reverseGeocodeForAddress(lnglat, poiName) {
     poiRateLimiter.execute(async () => {
       return new Promise((resolve) => {
-        // Try Geocoder first for reverse geocode
         this.map.plugin("AMap.Geocoder", () => {
           const geocoder = new AMap.Geocoder({});
 
@@ -147,16 +168,31 @@ class MapManager {
                 const addressComponent = result.regeocode.addressComponent;
                 const pois = result.regeocode.pois || [];
 
-                let poiName, poiAddress;
-
+                // Use the closest matching POI for address, or the formatted address
+                let poiAddress;
                 if (pois.length > 0) {
-                  // Take the first nearby POI
-                  poiName = pois[0].name;
+                  const clickLng = lnglat.getLng();
+                  const clickLat = lnglat.getLat();
+                  let closestPoi = pois[0];
+                  let minDistance = Infinity;
+
+                  for (const poi of pois) {
+                    if (poi.location) {
+                      const poiLng = poi.location.lng || poi.location.getLng();
+                      const poiLat = poi.location.lat || poi.location.getLat();
+                      const dist = Math.sqrt(
+                        Math.pow(clickLng - poiLng, 2) +
+                          Math.pow(clickLat - poiLat, 2),
+                      );
+                      if (dist < minDistance) {
+                        minDistance = dist;
+                        closestPoi = poi;
+                      }
+                    }
+                  }
                   poiAddress =
-                    pois[0].address || result.regeocode.formattedAddress;
+                    closestPoi.address || result.regeocode.formattedAddress;
                 } else {
-                  // Use reverse geocode result
-                  poiName = result.regeocode.formattedAddress || "未知地点";
                   poiAddress = `${addressComponent.province || ""}${addressComponent.city || ""}${addressComponent.district || ""}`;
                 }
 
@@ -169,9 +205,9 @@ class MapManager {
 
                 this.showPoiInfoWindow(lnglat, poiData);
               } else {
-                // Geocoder failed, show raw coordinates
+                // Geocoder failed, still show with hotspot name
                 const poiData = {
-                  name: `未知地点 (${lnglat.getLng().toFixed(4)}, ${lnglat.getLat().toFixed(4)})`,
+                  name: poiName,
                   address: "",
                   latitude: lnglat.getLat(),
                   longitude: lnglat.getLng(),

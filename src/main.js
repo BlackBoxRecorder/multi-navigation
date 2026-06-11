@@ -111,6 +111,17 @@ async function initApp() {
     window.addEventListener("destinationSet", async (e) => {
       const { destination } = e.detail;
 
+      // Get selected (checked) location indices
+      const selectedIndices = uiManager.getSelectedLocationIndices();
+      if (selectedIndices.length === 0) {
+        showToast("请至少选择一个地点", "warning");
+        return;
+      }
+      if (selectedIndices.length > 5) {
+        showToast("地点太多了，最多 5 个", "warning");
+        return;
+      }
+
       // Skip if same destination
       if (
         routeManager.currentDestination &&
@@ -128,8 +139,10 @@ async function initApp() {
       mapManager.clearRouteLines();
 
       // Calculate routes
-      const results =
-        await routeManager.calculateRoutesToDestination(destination);
+      const results = await routeManager.calculateRoutesToDestination(
+        destination,
+        selectedIndices,
+      );
       if (results.length > 0) {
         routeManager.renderResultsPanel(
           destination,

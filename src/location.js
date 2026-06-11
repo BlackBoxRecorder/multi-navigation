@@ -111,6 +111,18 @@ class LocationManager {
     );
   }
 
+  // Clear all locations
+  clearAll() {
+    const count = this.locations.length;
+    if (count === 0) return;
+    this.locations = [];
+    localStorage.removeItem(STORAGE_KEY);
+    showToast(`已清空 ${count} 个地点`, "info");
+    window.dispatchEvent(
+      new CustomEvent("locationsCleared", { detail: { count } }),
+    );
+  }
+
   // Get all locations
   getAllLocations() {
     return this.locations;
