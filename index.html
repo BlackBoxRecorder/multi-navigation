@@ -1,11 +1,17 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>高德地图多点规划工具</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <script type="text/javascript">
+    window._AMapSecurityConfig = {
+      securityJsCode: "7ab0ed26880ef99bbf68311a88796ca0",
+    };
+  </script>
   <!-- Amap JS API - Replace YOUR_AMAP_API_KEY with your actual key from https://lbs.amap.com/ -->
   <script type="text/javascript" src="https://webapi.amap.com/maps?v=2.0&key=44abb82d7e642da458d0d24b6a5a4f42"></script>
   <!-- Amap UI Library -->
@@ -17,20 +23,26 @@
         height: auto;
         min-height: 100vh;
       }
-      .w-\[30\%\], .w-\[40\%\] {
+
+      .w-\[30\%\],
+      .w-\[40\%\] {
         width: 100% !important;
       }
+
       .w-\[40\%\] {
         min-height: 500px;
         order: -1;
       }
-      .border-l, .border-r {
+
+      .border-l,
+      .border-r {
         border: none !important;
         border-top: 1px solid #e5e7eb !important;
       }
     }
   </style>
 </head>
+
 <body class="h-screen overflow-hidden bg-gray-50">
   <!-- 3 Column Layout -->
   <div class="flex h-full">
@@ -41,17 +53,13 @@
       <!-- Input Area -->
       <div class="mb-4">
         <label class="block text-sm font-medium text-gray-700 mb-2">输入地点（每行一个）</label>
-        <textarea
-          id="locationInput"
+        <textarea id="locationInput"
           class="w-full h-32 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
           placeholder="北京市海淀区中关村
 上海市浦东新区陆家嘴
-广州市天河区珠江新城"
-        ></textarea>
-        <button
-          id="addGroupBtn"
-          class="mt-2 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors font-medium"
-        >
+广州市天河区珠江新城"></textarea>
+        <button id="addGroupBtn"
+          class="mt-2 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors font-medium">
           添加地点组
         </button>
       </div>
@@ -71,11 +79,9 @@
     <div class="w-[40%] h-full relative">
       <!-- Map Search Bar -->
       <div class="absolute top-4 left-1/2 -translate-x-1/2 z-10 w-[90%] max-w-md">
-        <input
-          id="mapSearchInput"
+        <input id="mapSearchInput"
           class="w-full p-3 rounded-lg shadow-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          placeholder="搜索城市、地点、景区..."
-        >
+          placeholder="搜索城市、地点、景区...">
       </div>
 
       <!-- Map Container -->
@@ -101,11 +107,9 @@
       <!-- Multi-point Route Section -->
       <div class="mt-8 pt-6 border-t border-gray-200">
         <h3 class="font-semibold text-gray-800 mb-3">多点路线优化</h3>
-        <button
-          id="calcOptimalRouteBtn"
+        <button id="calcOptimalRouteBtn"
           class="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg transition-colors font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
-          disabled
-        >
+          disabled>
           计算最优路线（经过所有地点）
         </button>
 
@@ -123,4 +127,5 @@
 
   <script type="module" src="/src/main.js"></script>
 </body>
+
 </html>
