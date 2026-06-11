@@ -12,6 +12,7 @@ class UIManager {
 
     this.bindEvents();
     this.renderMyLocations();
+    this.initHelpModal();
   }
 
   bindEvents() {
@@ -133,6 +134,73 @@ class UIManager {
     // Re-render
     this.renderMyLocations();
     this.showEmptyState();
+  }
+
+  // Initialize help modal interactions
+  initHelpModal() {
+    const modal = document.getElementById("helpModal");
+    const helpBtn = document.getElementById("helpBtn");
+    const closeBtn = document.getElementById("helpModalClose");
+
+    if (!modal || !helpBtn) return;
+
+    // Open modal
+    helpBtn.addEventListener("click", () => {
+      modal.classList.remove("hidden");
+    });
+
+    // Close modal helpers
+    const closeModal = () => {
+      modal.classList.add("hidden");
+    };
+
+    // Close button
+    if (closeBtn) {
+      closeBtn.addEventListener("click", closeModal);
+    }
+
+    // Click overlay background
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeModal();
+    });
+
+    // ESC key
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !modal.classList.contains("hidden")) {
+        closeModal();
+      }
+    });
+
+    // Tab switching
+    const tabBtns = modal.querySelectorAll(".help-tab-btn");
+    const tabContents = modal.querySelectorAll(".help-tab-content");
+
+    tabBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const targetTab = btn.dataset.tab;
+
+        // Update tab button styles
+        tabBtns.forEach((b) => {
+          b.classList.remove("border-blue-500", "text-blue-600");
+          b.classList.add("border-transparent", "text-gray-500");
+        });
+        btn.classList.add("border-blue-500", "text-blue-600");
+        btn.classList.remove("border-transparent", "text-gray-500");
+
+        // Show/hide tab content
+        tabContents.forEach((content) => {
+          if (content.id === "helpTabFeatures" && targetTab === "features") {
+            content.classList.remove("hidden");
+          } else if (content.id === "helpTabGuide" && targetTab === "guide") {
+            content.classList.remove("hidden");
+          } else if (content.id === "helpTabVideo" && targetTab === "video") {
+            content.classList.remove("hidden");
+          } else {
+            content.classList.add("hidden");
+          }
+        });
+      });
+    });
   }
 
   // Show empty state in right panel

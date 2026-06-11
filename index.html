@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>高德地图多点规划工具</title>
+  <title>MapFlow - 多点路径规划</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script type="text/javascript">
@@ -153,6 +153,11 @@
   <div id="mainLayout" class="flex h-full">
     <!-- Left Column: location Input Panel -->
     <div id="leftPanel" class="h-full border-r border-gray-200 bg-white p-4 overflow-y-auto" style="width: 240px; flex-shrink: 0;">
+      <!-- Site Title Bar -->
+      <div class="flex items-center justify-between mb-3">
+        <h1 class="text-lg font-bold text-gray-800 select-none">🗺️ MapFlow</h1>
+        <button id="helpBtn" class="w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors text-sm font-bold border border-gray-300 hover:border-blue-300" title="使用帮助">?</button>
+      </div>
       <h2 class="text-xl font-bold mb-4 text-gray-800">我的地点</h2>
   
       <!-- My Locations List -->
@@ -222,6 +227,101 @@
 
   <!-- Toast Notification Container -->
   <div id="toastContainer" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
+  <!-- Help Modal -->
+  <div id="helpModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden">
+    <div class="bg-white rounded-xl shadow-2xl w-[560px] max-h-[80vh] overflow-hidden flex flex-col">
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+        <h3 class="text-lg font-bold text-gray-800">MapFlow 使用帮助</h3>
+        <button id="helpModalClose" class="text-gray-400 hover:text-gray-600 transition-colors text-xl leading-none">&times;</button>
+      </div>
+
+      <!-- Tab Bar -->
+      <div class="flex border-b border-gray-200 px-5">
+        <button class="help-tab-btn px-4 py-2.5 text-sm font-medium border-b-2 border-blue-500 text-blue-600 -mb-px transition-colors" data-tab="features">功能概述</button>
+        <button class="help-tab-btn px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 -mb-px transition-colors" data-tab="guide">操作指南</button>
+        <button class="help-tab-btn px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 -mb-px transition-colors" data-tab="video">视频教程</button>
+      </div>
+
+      <!-- Tab Content -->
+      <div class="px-5 py-4 overflow-y-auto flex-1">
+        <!-- Features Tab -->
+        <div id="helpTabFeatures" class="help-tab-content space-y-3">
+          <div>
+            <h4 class="font-semibold text-gray-800 mb-1">🗺️ 地图搜索浏览</h4>
+            <p class="text-sm text-gray-600">使用顶部搜索栏搜索城市、地点、景区，地图自动定位并展示 POI 标记。</p>
+          </div>
+          <div>
+            <h4 class="font-semibold text-gray-800 mb-1">📍 地点收藏管理</h4>
+            <p class="text-sm text-gray-600">右键点击地图 POI 即可收藏到「我的地点」列表；支持勾选、删除、清空，数据自动保存到浏览器本地。</p>
+          </div>
+          <div>
+            <h4 class="font-semibold text-gray-800 mb-1">🚗 多模式路线规划</h4>
+            <p class="text-sm text-gray-600">勾选出发地，点击目的地 POI，自动计算驾车/公交/步行/骑行四种路线，支持切换交通模式查看具体方案。</p>
+          </div>
+          <div>
+            <h4 class="font-semibold text-gray-800 mb-1">⭐ 多点最优路径</h4>
+            <p class="text-sm text-gray-600">右侧面板「计算最优路径」按钮，利用高德路径规划 API 计算途经多点的最优行车路线（最多 16 个地点）。</p>
+          </div>
+        </div>
+
+        <!-- Guide Tab -->
+        <div id="helpTabGuide" class="help-tab-content hidden space-y-3">
+          <div class="flex items-start gap-2">
+            <span class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-blue-100 text-blue-600 text-xs font-bold mt-0.5">1</span>
+            <div>
+              <p class="text-sm font-medium text-gray-800">添加地点</p>
+              <p class="text-xs text-gray-500">在顶部搜索栏输入地点名并搜索，或在地图上右键点击 POI 标记 → 选择「收藏到我的地点」。</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-blue-100 text-blue-600 text-xs font-bold mt-0.5">2</span>
+            <div>
+              <p class="text-sm font-medium text-gray-800">选择出发地</p>
+              <p class="text-xs text-gray-500">在左侧「我的地点」列表中，勾选复选框作为出发地（至少勾选 1 个，最多 5 个）。</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-blue-100 text-blue-600 text-xs font-bold mt-0.5">3</span>
+            <div>
+              <p class="text-sm font-medium text-gray-800">设置目的地</p>
+              <p class="text-xs text-gray-500">在地图上点击任意 POI 标记，弹出信息窗，点击「设为目的地」按钮。</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-blue-100 text-blue-600 text-xs font-bold mt-0.5">4</span>
+            <div>
+              <p class="text-sm font-medium text-gray-800">查看路线</p>
+              <p class="text-xs text-gray-500">右侧「路径规划」面板自动显示驾车路线方案，可切换顶部「驾车/公交/步行/骑行」标签查看不同交通模式。</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-blue-100 text-blue-600 text-xs font-bold mt-0.5">5</span>
+            <div>
+              <p class="text-sm font-medium text-gray-800">多点最优路径</p>
+              <p class="text-xs text-gray-500">如需按顺序途经多个地点，点击右侧面板「计算最优路径」按钮，系统自动规划多点间最优路线。</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-2">
+            <span class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-blue-100 text-blue-600 text-xs font-bold mt-0.5">6</span>
+            <div>
+              <p class="text-sm font-medium text-gray-800">清空地点</p>
+              <p class="text-xs text-gray-500">点击左侧面板底部「清空所有地点」按钮可一键清除所有收藏。</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Video Tab -->
+        <div id="helpTabVideo" class="help-tab-content hidden">
+          <div class="border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 flex flex-col items-center justify-center py-12">
+            <p class="text-gray-400 text-lg">📹</p>
+            <p class="text-sm text-gray-400 mt-2">视频教程即将上线，敬请期待</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script type="module" src="/src/main.js"></script>
 </body>
