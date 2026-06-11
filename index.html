@@ -143,13 +143,13 @@
   
       <!-- Map Container -->
       <div id="mapContainer" class="w-full h-full relative">
-        <!-- Transit Panel Wrapper (floating on map, uses Amap native panel) -->
-        <div id="transitPanelWrapper" class="absolute top-4 right-4 z-20 hidden" style="width: 280px;">
+        <!-- Route Detail Panel (floating on map, uses Amap native panel for all modes) -->
+        <div id="routeDetailPanelWrapper" class="absolute top-4 right-4 z-20 hidden" style="width: 280px;">
           <div class="flex items-center justify-between mb-1 px-1">
-            <span id="transitPanelTitle" class="text-xs text-gray-500 truncate"></span>
-            <button id="transitPanelClose" class="text-gray-400 hover:text-gray-600 text-xs px-1 transition-colors" title="关闭">✕ 关闭</button>
+            <span id="routeDetailPanelTitle" class="text-xs text-gray-500 truncate"></span>
+            <button id="routeDetailPanelClose" class="text-gray-400 hover:text-gray-600 text-xs px-1 transition-colors" title="关闭">✕ 关闭</button>
           </div>
-          <div id="transitPanel" class="bg-white rounded-lg shadow-xl overflow-hidden" style="max-height: 70vh; overflow-y: auto;"></div>
+          <div id="routeDetailPanel" class="bg-white rounded-lg shadow-xl overflow-hidden" style="max-height: 70vh; overflow-y: auto;"></div>
         </div>
       </div>
     </div>

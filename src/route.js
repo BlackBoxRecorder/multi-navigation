@@ -33,12 +33,14 @@ const MODE_COLORS = {
   [TRANSPORT_MODES.BICYCLING]: "#f59e0b",
 };
 
-// Route line palette — opacity/width variants for same-mode multi-routes
-const ROUTE_PALETTE = [
-  { opacity: 0.9, width: 5 },
-  { opacity: 0.65, width: 4 },
-  { opacity: 0.5, width: 3 },
-  { opacity: 0.4, width: 3 },
+// Origin-distinct colors — each origin route gets a unique color for easy identification
+const ORIGIN_COLORS = [
+  "#ef4444", // 红 — 起点 0
+  "#3b82f6", // 蓝 — 起点 1
+  "#22c55e", // 绿 — 起点 2
+  "#8b5cf6", // 紫 — 起点 3
+  "#f59e0b", // 橙 — 起点 4
+  "#06b6d4", // 青 — 起点 5
 ];
 
 class RouteManager {
@@ -47,8 +49,8 @@ class RouteManager {
     this.activeMode = TRANSPORT_MODES.DRIVING;
     this.currentDestination = null;
     this.currentRouteLines = []; // Track rendered lines for highlighting
-    this._transitService = null; // AMap.Transfer instance for native panel
-    this._transitDetailResultIndex = null; // Which origin's transit detail is showing
+    this._routeDetailService = null; // Native AMap route service instance
+    this._routeDetailResultIndex = null; // Which origin's detail is showing
   }
 
   // Plugin name and constructor class mapping for each transport mode
@@ -262,13 +264,11 @@ class RouteManager {
   switchTransportMode(mode) {
     this.activeMode = mode;
 
-    // Close transit detail panel when switching away from transit
-    if (mode !== TRANSPORT_MODES.TRANSIT) {
-      this.hideTransitDetailPanel();
-    }
+    // Close native detail panel when switching mode
+    this.hideRouteDetailPanel();
 
-    // Clear old route lines
-    mapManager.clearRouteLines();
+    // Clear old route lines from map
+    this.currentRouteLines.forEach((line) => mapManager.map.remove(line));
     this.currentRouteLines = [];
 
     const routesToRender = [];
@@ -293,15 +293,14 @@ class RouteManager {
     }
 
     // Render all routes to map
-    routesToRender.forEach((item, paletteIdx) => {
-      const palette = ROUTE_PALETTE[paletteIdx % ROUTE_PALETTE.length];
-      const color = MODE_COLORS[mode];
+    routesToRender.forEach((item) => {
+      const color = ORIGIN_COLORS[item.index % ORIGIN_COLORS.length];
 
       const polyline = new AMap.Polyline({
         path: item.pathArray,
         strokeColor: color,
-        strokeWeight: palette.width,
-        strokeOpacity: palette.opacity,
+        strokeWeight: 4,
+        strokeOpacity: 0.8,
         zIndex: 50,
       });
 
@@ -319,49 +318,67 @@ class RouteManager {
     );
   }
 
-  // --- Transit Detail Panel on Map (Amap Native) ---
+  // --- Route Detail Panel on Map (Amap Native — all modes) ---
 
-  // Show the transit detail panel using Amap's native Transfer + panel rendering
-  showTransitDetailPanel(resultIndex) {
+  // Show native route detail panel for ANY transport mode
+  _showNativeRoutePanel(mode, resultIndex) {
     const result = this.currentResults[resultIndex];
     if (!result) return;
 
-    // Close previous panel first (without redrawing — we'll redraw after new panel)
-    this._closeTransitPanelOnly();
+    // Close previous panel first (without redrawing)
+    this._closeRoutePanelOnly();
 
     // Clear overview route lines (native panel draws its own routes)
-    mapManager.clearRouteLines();
+    this.currentRouteLines.forEach((line) => mapManager.map.remove(line));
     this.currentRouteLines = [];
 
     // Show the panel wrapper
-    const wrapper = document.getElementById("transitPanelWrapper");
+    const wrapper = document.getElementById("routeDetailPanelWrapper");
     if (wrapper) wrapper.classList.remove("hidden");
 
-    // Clear panel content (in case of previous residual)
-    const panelEl = document.getElementById("transitPanel");
+    // Clear panel content
+    const panelEl = document.getElementById("routeDetailPanel");
     if (panelEl) panelEl.innerHTML = "";
 
     // Update title
-    const title = document.getElementById("transitPanelTitle");
-    if (title) title.textContent = `从 ${result.origin.name}`;
+    const title = document.getElementById("routeDetailPanelTitle");
+    if (title)
+      title.textContent = `从 ${result.origin.name} (${MODE_NAMES[mode]})`;
 
-    this._transitDetailResultIndex = resultIndex;
+    this._routeDetailResultIndex = resultIndex;
 
-    // Use Amap native Transfer + panel (auto renders plans, routes, handles plan switching)
-    AMap.plugin(["AMap.Transfer", "AMap.Adaptor"], () => {
-      const transOptions = {
+    const pluginConfig = RouteManager.PLUGIN_MAP[mode];
+    // Transit needs AMap.Adaptor for panel styling; all modes work fine without it
+    const plugins =
+      mode === TRANSPORT_MODES.TRANSIT
+        ? [pluginConfig.plugin, "AMap.Adaptor"]
+        : [pluginConfig.plugin];
+
+    AMap.plugin(plugins, () => {
+      const ServiceClass = pluginConfig.klass
+        .split(".")
+        .reduce((obj, key) => obj[key], window);
+
+      const options = {
         map: mapManager.map,
-        city:
-          (this.currentDestination && this.currentDestination.city) ||
-          result.origin.city ||
-          "北京",
-        panel: "transitPanel",
-        policy: AMap.TransferPolicy.LEAST_TIME,
+        panel: "routeDetailPanel",
         autoFitView: true,
       };
 
-      const transfer = new AMap.Transfer(transOptions);
-      this._transitService = transfer;
+      // Mode-specific options
+      if (mode === TRANSPORT_MODES.DRIVING) {
+        options.policy = AMap.DrivingPolicy.LEAST_TIME;
+      } else if (mode === TRANSPORT_MODES.TRANSIT) {
+        options.city =
+          (this.currentDestination && this.currentDestination.city) ||
+          result.origin.city ||
+          "北京";
+        options.policy = AMap.TransferPolicy.LEAST_TIME;
+      }
+      // Walking and Riding use default options
+
+      const service = new ServiceClass(options);
+      this._routeDetailService = service;
 
       const originPoint = [result.origin.longitude, result.origin.latitude];
       const destPoint = [
@@ -369,55 +386,50 @@ class RouteManager {
         this.currentDestination.latitude,
       ];
 
-      transfer.search(originPoint, destPoint, (status) => {
+      service.search(originPoint, destPoint, (status) => {
         if (status === "complete") {
-          // Amap native panel handles everything: plan tabs, route drawing, station markers
+          // Amap native panel handles everything: plan tabs, route drawing, markers
         } else {
-          showToast("公交路线查询失败", "error");
-          this.hideTransitDetailPanel();
+          showToast(`${MODE_NAMES[mode]}路线查询失败`, "error");
+          this.hideRouteDetailPanel();
         }
       });
     });
 
     // Bind close button
-    const closeBtn = document.getElementById("transitPanelClose");
+    const closeBtn = document.getElementById("routeDetailPanelClose");
     if (closeBtn) {
-      closeBtn.onclick = () => this.hideTransitDetailPanel();
+      closeBtn.onclick = () => this.hideRouteDetailPanel();
     }
   }
 
-  // Hide the transit detail panel
-  hideTransitDetailPanel() {
-    this._closeTransitPanelOnly();
+  // Hide the route detail panel (any mode)
+  hideRouteDetailPanel() {
+    this._closeRoutePanelOnly();
 
-    // Redraw overview transit routes if still in transit mode
-    if (
-      this.activeMode === TRANSPORT_MODES.TRANSIT &&
-      this.currentResults.length > 0
-    ) {
-      mapManager.clearRouteLines();
+    // Redraw overview routes if we still have results
+    if (this.currentResults.length > 0) {
+      this.currentRouteLines.forEach((line) => mapManager.map.remove(line));
       this.currentRouteLines = [];
-      // Re-render overview without going through switchTransportMode (avoids recursion)
-      this._renderTransitOverviewRoutes();
+      this._renderOverviewRoutes(this.activeMode);
     }
   }
 
-  // Internal: close panel + clear Transfer instance, without redrawing overview
-  _closeTransitPanelOnly() {
-    const wrapper = document.getElementById("transitPanelWrapper");
+  // Internal: close panel + clear service instance, without redrawing overview
+  _closeRoutePanelOnly() {
+    const wrapper = document.getElementById("routeDetailPanelWrapper");
     if (wrapper) wrapper.classList.add("hidden");
 
-    if (this._transitService) {
-      this._transitService.clear();
-      this._transitService = null;
+    if (this._routeDetailService) {
+      this._routeDetailService.clear();
+      this._routeDetailService = null;
     }
 
-    this._transitDetailResultIndex = null;
+    this._routeDetailResultIndex = null;
   }
 
-  // Internal: render overview transit routes (extracted from switchTransportMode for reuse)
-  _renderTransitOverviewRoutes() {
-    const mode = TRANSPORT_MODES.TRANSIT;
+  // Internal: render overview routes for a given mode (extracted for reuse)
+  _renderOverviewRoutes(mode) {
     const routesToRender = [];
     let hasAnyRoute = false;
 
@@ -436,15 +448,14 @@ class RouteManager {
 
     if (!hasAnyRoute) return;
 
-    routesToRender.forEach((item, paletteIdx) => {
-      const palette = ROUTE_PALETTE[paletteIdx % ROUTE_PALETTE.length];
-      const color = MODE_COLORS[mode];
+    routesToRender.forEach((item) => {
+      const color = ORIGIN_COLORS[item.index % ORIGIN_COLORS.length];
 
       const polyline = new AMap.Polyline({
         path: item.pathArray,
         strokeColor: color,
-        strokeWeight: palette.width,
-        strokeOpacity: palette.opacity,
+        strokeWeight: 4,
+        strokeOpacity: 0.8,
         zIndex: 50,
       });
 
@@ -456,27 +467,14 @@ class RouteManager {
     mapManager.map.setFitView(this.currentRouteLines);
   }
 
-  // Highlight a single route, dim others
-  highlightSingleRoute(routeIndex) {
-    this.currentRouteLines.forEach((line) => {
-      if (line._routeIndex === routeIndex) {
-        line.setOptions({
-          strokeWeight: 6,
-          strokeOpacity: 1,
-          zIndex: 100,
-        });
-      } else {
-        line.setOptions({
-          strokeOpacity: 0.2,
-          zIndex: 30,
-        });
-      }
-    });
+  // Highlight a single route — deprecated, native panel handles this now
+  highlightSingleRoute(_routeIndex) {
+    // no-op: native route detail panel renders its own route lines
   }
 
-  // Reset all route highlights to default
+  // Reset all route highlights — deprecated
   resetHighlight() {
-    this.switchTransportMode(this.activeMode);
+    // no-op: switching transport mode re-renders all routes
   }
 
   // Render the results panel in right sidebar
@@ -484,8 +482,8 @@ class RouteManager {
     const container = document.getElementById("routeResultsList");
     if (!container) return;
 
-    // Close transit detail panel when new results come in
-    this.hideTransitDetailPanel();
+    // Close native route detail panel when new results come in
+    this.hideRouteDetailPanel();
 
     this.activeMode = activeMode || TRANSPORT_MODES.DRIVING;
     this.currentResults = results;
@@ -579,7 +577,7 @@ class RouteManager {
           <p class="text-xs text-gray-500 mt-1 truncate">${result.origin.address || ""}</p>
           <div class="flex items-center mt-2 text-xs text-gray-700 space-x-3">
             <span class="flex items-center">
-              <span class="w-2 h-2 rounded-full mr-1" style="background-color: ${MODE_COLORS[mode]}"></span>
+              <span class="w-2 h-2 rounded-full mr-1" style="background-color: ${ORIGIN_COLORS[idx % ORIGIN_COLORS.length]}"></span>
               ${formatDistance(route.distance)}
             </span>
             <span>⏱ ${formatDuration(route.duration)}</span>
@@ -593,7 +591,23 @@ class RouteManager {
     container.querySelectorAll(".route-card").forEach((card) => {
       card.addEventListener("click", (e) => {
         const routeIndex = parseInt(e.currentTarget.dataset.routeIndex);
-        this.highlightSingleRoute(routeIndex);
+        const wrapper = document.getElementById("routeDetailPanelWrapper");
+
+        // Toggle: if panel is showing for the same route, cancel selection
+        if (
+          this._routeDetailResultIndex === routeIndex &&
+          wrapper &&
+          !wrapper.classList.contains("hidden")
+        ) {
+          this.hideRouteDetailPanel();
+          e.currentTarget.classList.remove(
+            "border-blue-400",
+            "bg-blue-50",
+            "ring-1",
+            "ring-blue-300",
+          );
+          return;
+        }
 
         // Highlight the card
         container
@@ -613,10 +627,8 @@ class RouteManager {
           "ring-blue-300",
         );
 
-        // For transit mode, show detail panel on the map
-        if (mode === TRANSPORT_MODES.TRANSIT) {
-          this.showTransitDetailPanel(routeIndex);
-        }
+        // Show native route detail panel on the map
+        this._showNativeRoutePanel(mode, routeIndex);
       });
     });
   }
