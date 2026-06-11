@@ -1,157 +1,109 @@
-import { locationManager } from './location.js';
-import { showToast } from './utils.js';
-import { routeManager } from './route.js';
+import { locationManager } from "./location.js";
+import { mapManager } from "./map.js";
 
 class UIManager {
   constructor() {
-    this.locationInput = document.getElementById('locationInput');
-    this.addGroupBtn = document.getElementById('addGroupBtn');
-    this.groupsList = document.getElementById('groupsList');
-    this.calcOptimalRouteBtn = document.getElementById('calcOptimalRouteBtn');
+    this.myLocationsList = document.getElementById("myLocationsList");
+    this.routeResultsList = document.getElementById("routeResultsList");
+    this.destinationDisplay = document.getElementById("destinationDisplay");
 
     this.bindEvents();
+    this.renderMyLocations();
   }
 
   bindEvents() {
-    // Add group button click
-    this.addGroupBtn.addEventListener('click', () => this.handleAddGroup());
-
-    // Enter key in input to add group
-    this.locationInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && e.ctrlKey) {
-        this.handleAddGroup();
-      }
-    });
-
-    // Optimal route button click
-    this.calcOptimalRouteBtn.addEventListener('click', () => this.handleCalcOptimalRoute());
+    // No DOM events needed at constructor level —
+    // interactions are handled via CustomEvent listeners in main.js
+    // and inline click handlers in map.js info window / route.js mode switches
   }
 
-  async handleAddGroup() {
-    const inputText = this.locationInput.value.trim();
-    if (!inputText) {
-      showToast('请输入地点', 'warning');
-      return;
-    }
+  // Render the flat "我的地点" list in the left panel
+  renderMyLocations() {
+    if (!this.myLocationsList) return;
 
-    const locationNames = inputText.split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0);
+    const locations = locationManager.getAllLocations();
 
-    if (locationNames.length === 0) {
-      showToast('请输入有效的地点', 'warning');
-      return;
-    }
-
-    this.addGroupBtn.disabled = true;
-    this.addGroupBtn.textContent = '添加中...';
-
-    try {
-      const group = await locationManager.addGroup(locationNames);
-      if (group) {
-        this.renderGroupsList();
-        this.locationInput.value = ''; // Clear input after adding
-        // Dispatch group added event
-        window.dispatchEvent(new CustomEvent('groupAdded', { detail: { group } }));
-      }
-    } catch (error) {
-      showToast('添加分组失败', 'error');
-      console.error('Add group error:', error);
-    } finally {
-      this.addGroupBtn.disabled = false;
-      this.addGroupBtn.textContent = '添加地点组';
-    }
-  }
-
-  // Render groups list UI
-  renderGroupsList() {
-    this.groupsList.innerHTML = '';
-
-    locationManager.groups.forEach((group, index) => {
-      const groupEl = document.createElement('div');
-      groupEl.className = 'p-3 border border-gray-200 rounded-lg bg-gray-50';
-
-      groupEl.innerHTML = `
-        <div class="flex items-center justify-between mb-2">
-          <div class="flex items-center">
-            <span class="w-3 h-3 rounded-full mr-2" style="background-color: ${group.color}"></span>
-            <h3 class="font-medium text-gray-800">${group.name}</h3>
-            <span class="ml-2 text-xs text-gray-500">${group.locations.length}个地点</span>
-          </div>
-          <div class="flex items-center space-x-1">
-            <button class="toggle-group-btn text-xs px-2 py-1 rounded ${group.visible ? 'bg-blue-100 text-blue-700' : 'bg-gray-200 text-gray-600'}" data-group-index="${index}">
-              ${group.visible ? '隐藏' : '显示'}
-            </button>
-            <button class="remove-group-btn text-xs px-2 py-1 rounded bg-red-100 text-red-700" data-group-index="${index}">
-              删除
-            </button>
-          </div>
-        </div>
-        <div class="max-h-40 overflow-y-auto space-y-1">
-          ${group.locations.map(loc => `
-            <div class="text-xs text-gray-700 flex items-center">
-              <span class="w-1.5 h-1.5 rounded-full mr-1.5" style="background-color: ${group.color}"></span>
-              <span class="truncate" title="${loc.address || loc.name}">${loc.name}</span>
-            </div>
-          `).join('')}
+    if (locations.length === 0) {
+      this.myLocationsList.innerHTML = `
+        <div class="text-center py-8 text-gray-400">
+          <svg class="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+          <p class="text-sm">点击地图上的 POI 添加地点</p>
         </div>
       `;
+      return;
+    }
 
-      this.groupsList.appendChild(groupEl);
-    });
+    this.myLocationsList.innerHTML = locations
+      .map(
+        (loc, index) => `
+      <div class="flex items-start justify-between p-3 border border-gray-200 rounded-lg bg-white hover:border-blue-200 transition-colors">
+        <div class="flex-1 min-w-0 mr-2">
+          <p class="font-medium text-sm text-gray-800 truncate">${loc.name}</p>
+          <p class="text-xs text-gray-500 mt-0.5 truncate">${loc.address || "地址不详"}</p>
+        </div>
+        <button class="remove-location-btn flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors p-1"
+                data-index="${index}"
+                title="删除">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+    `,
+      )
+      .join("");
 
-    // Bind toggle and remove events
-    document.querySelectorAll('.toggle-group-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const groupIndex = parseInt(e.target.dataset.groupIndex);
-        const group = locationManager.groups[groupIndex];
-        locationManager.toggleGroupVisibility(groupIndex, !group.visible);
-        this.renderGroupsList();
+    // Bind delete events
+    this.myLocationsList
+      .querySelectorAll(".remove-location-btn")
+      .forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const index = parseInt(e.currentTarget.dataset.index);
+          this.handleRemoveLocation(index);
+        });
       });
-    });
-
-    document.querySelectorAll('.remove-group-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const groupIndex = parseInt(e.target.dataset.groupIndex);
-        if (confirm(`确定要删除分组 ${locationManager.groups[groupIndex].name} 吗？`)) {
-          locationManager.removeGroup(groupIndex);
-          this.renderGroupsList();
-        }
-      });
-    });
   }
 
-  // Update selected origin display
-  updateSelectedOrigin(location) {
-    const container = document.getElementById('selectedOrigin');
-    const nameEl = document.getElementById('originName');
-    const addressEl = document.getElementById('originAddress');
+  // Handle location removal
+  handleRemoveLocation(index) {
+    const locations = locationManager.getAllLocations();
+    const removed = locationManager.removeLocation(index);
 
-    if (location) {
-      nameEl.textContent = location.name;
-      addressEl.textContent = location.address || '';
-      container.classList.remove('hidden');
+    if (removed) {
+      // Remove marker from map
+      mapManager.removeMyLocationMarker(index);
 
-      // Enable optimal route button if there are at least 2 locations
-      const allLocations = locationManager.getAllLocations();
-      document.getElementById('calcOptimalRouteBtn').disabled = allLocations.length < 2;
-    } else {
-      container.classList.add('hidden');
-      document.getElementById('calcOptimalRouteBtn').disabled = true;
+      // Dispatch event
+      window.dispatchEvent(
+        new CustomEvent("locationRemoved", {
+          detail: { index, location: removed },
+        }),
+      );
+
+      // Re-render
+      this.renderMyLocations();
     }
   }
 
-  async handleCalcOptimalRoute() {
-    this.calcOptimalRouteBtn.disabled = true;
-    this.calcOptimalRouteBtn.textContent = '计算中...';
-
-    try {
-      await routeManager.calculateOptimalMultiPointRoute();
-    } catch (error) {
-      console.error('Optimal route error:', error);
-    } finally {
-      this.calcOptimalRouteBtn.disabled = false;
-      this.calcOptimalRouteBtn.textContent = '计算最优路线（经过所有地点）';
+  // Show empty state in right panel
+  showEmptyState() {
+    if (this.destinationDisplay) {
+      this.destinationDisplay.classList.add("hidden");
+    }
+    if (this.routeResultsList) {
+      this.routeResultsList.innerHTML = `
+        <p class="text-sm text-gray-500 italic">点击地图 POI 并设为目的地以计算路线</p>
+      `;
+    }
+    const modeBar = document.getElementById("modeSwitchBar");
+    if (modeBar) {
+      modeBar.innerHTML = "";
     }
   }
 }

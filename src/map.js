@@ -1,12 +1,19 @@
-import { showToast } from "./utils.js";
+import { RateLimiter, showToast } from "./utils.js";
+import { locationManager } from "./location.js";
+
+const poiRateLimiter = new RateLimiter(500); // Rate limit for POI search on map click
+
+// Marker colors
+const MY_LOCATION_COLOR = "#3b82f6"; // Blue for saved locations
+const DESTINATION_COLOR = "#ef4444"; // Red for destination
 
 class MapManager {
   constructor() {
     this.map = null;
     this.markers = [];
     this.routeLines = [];
-    this.selectedMarker = null;
-    this.markerColors = ["#ef4444", "#3b82f6", "#22c55e", "#a855f7", "#f97316"];
+    this.destinationMarker = null;
+    this.poiInfoWindow = null;
   }
 
   init(containerId = "mapContainer") {
@@ -17,8 +24,6 @@ class MapManager {
           center: [116.397428, 39.90923],
           resizeEnable: true,
         });
-
-        //this.map.addControl(new AMap.Scale());
 
         this.map.plugin("AMap.Geolocation", () => {
           const geolocation = new AMap.Geolocation({
@@ -39,6 +44,7 @@ class MapManager {
         });
 
         this.initSearchBar();
+        this.initPoiClickListener();
 
         resolve(this.map);
       } catch (error) {
@@ -66,7 +72,206 @@ class MapManager {
     });
   }
 
-  addMarker(location, groupIndex, onClick = null) {
+  // --- POI Click Listener ---
+
+  initPoiClickListener() {
+    this.map.on("click", (e) => {
+      // Check if click is near existing markers (screen-distance based)
+      if (this.isClickNearMarker(e)) return;
+      this.closePoiInfoWindow();
+
+      const lnglat = e.lnglat;
+      this.reverseGeocodeAndSearch(lnglat);
+    });
+  }
+
+  isClickNearMarker(clickEvent) {
+    const clickPixel = clickEvent.pixel;
+    const THRESHOLD_PX = 20;
+
+    // Check all my-location markers
+    for (const item of this.markers) {
+      const markerPixel = this.map.lngLatToContainer(item.marker.getPosition());
+      const dx = clickPixel.x - markerPixel.x;
+      const dy = clickPixel.y - markerPixel.y;
+      if (Math.sqrt(dx * dx + dy * dy) < THRESHOLD_PX) return true;
+    }
+
+    // Check destination marker
+    if (this.destinationMarker) {
+      const destPixel = this.map.lngLatToContainer(
+        this.destinationMarker.getPosition(),
+      );
+      const dx = clickPixel.x - destPixel.x;
+      const dy = clickPixel.y - destPixel.y;
+      if (Math.sqrt(dx * dx + dy * dy) < THRESHOLD_PX) return true;
+    }
+
+    return false;
+  }
+
+  reverseGeocodeAndSearch(lnglat) {
+    poiRateLimiter.execute(async () => {
+      return new Promise((resolve) => {
+        // Try Geocoder first for reverse geocode
+        this.map.plugin("AMap.Geocoder", () => {
+          const geocoder = new AMap.Geocoder({});
+
+          geocoder.getAddress(
+            [lnglat.getLng(), lnglat.getLat()],
+            (status, result) => {
+              if (status === "complete" && result.regeocode) {
+                const addressComponent = result.regeocode.addressComponent;
+                const pois = result.regeocode.pois || [];
+
+                let poiName, poiAddress;
+
+                if (pois.length > 0) {
+                  // Take the first nearby POI
+                  poiName = pois[0].name;
+                  poiAddress =
+                    pois[0].address || result.regeocode.formattedAddress;
+                } else {
+                  // Use reverse geocode result
+                  poiName = result.regeocode.formattedAddress || "未知地点";
+                  poiAddress = `${addressComponent.province || ""}${addressComponent.city || ""}${addressComponent.district || ""}`;
+                }
+
+                const poiData = {
+                  name: poiName,
+                  address: poiAddress,
+                  latitude: lnglat.getLat(),
+                  longitude: lnglat.getLng(),
+                };
+
+                this.showPoiInfoWindow(lnglat, poiData);
+              } else {
+                // Geocoder failed, show raw coordinates
+                const poiData = {
+                  name: `未知地点 (${lnglat.getLng().toFixed(4)}, ${lnglat.getLat().toFixed(4)})`,
+                  address: "",
+                  latitude: lnglat.getLat(),
+                  longitude: lnglat.getLng(),
+                };
+                this.showPoiInfoWindow(lnglat, poiData);
+              }
+              resolve();
+            },
+          );
+        });
+      });
+    });
+  }
+
+  // --- Custom Info Window ---
+
+  showPoiInfoWindow(lnglat, poiData) {
+    this.closePoiInfoWindow();
+
+    const isCollected = locationManager.hasLocation(
+      poiData.latitude,
+      poiData.longitude,
+    );
+
+    const infoDiv = document.createElement("div");
+    infoDiv.className =
+      "absolute z-[100] bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[220px]";
+    infoDiv.style.transform = "translate(-50%, -120%)";
+
+    infoDiv.innerHTML = `
+      <h3 class="font-semibold text-sm text-gray-800 mb-1">${poiData.name}</h3>
+      <p class="text-xs text-gray-500 mb-3 truncate max-w-[200px]">${poiData.address || "地址不详"}</p>
+      <div class="flex space-x-2">
+        <button class="add-location-btn flex-1 text-xs px-3 py-1.5 rounded font-medium transition-colors
+          ${
+            isCollected
+              ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+              : "bg-blue-500 hover:bg-blue-600 text-white"
+          }"
+          ${isCollected ? "disabled" : ""}>
+          ${isCollected ? "已添加 ✓" : "添加到我的地点"}
+        </button>
+        <button class="set-destination-btn flex-1 text-xs px-3 py-1.5 rounded font-medium bg-green-500 hover:bg-green-600 text-white transition-colors">
+          设为目的地
+        </button>
+      </div>
+    `;
+
+    // Position the info window
+    const container = this.map.getContainer();
+    container.appendChild(infoDiv);
+
+    // Update position initially and on map move
+    const updatePosition = () => {
+      const pixel = this.map.lngLatToContainer(lnglat);
+      infoDiv.style.left = pixel.x + "px";
+      infoDiv.style.top = pixel.y + "px";
+    };
+
+    updatePosition();
+    const moveHandler = () => updatePosition();
+    this.map.on("move", moveHandler);
+    this.map.on("zoom", moveHandler);
+
+    // Store cleanup references
+    this.poiInfoWindow = {
+      el: infoDiv,
+      moveHandler,
+      lnglat,
+      poiData,
+    };
+
+    // Bind button events
+    infoDiv
+      .querySelector(".add-location-btn")
+      .addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!isCollected) {
+          const added = locationManager.addLocation(poiData);
+          if (added) {
+            this.addMyLocationMarker(poiData);
+            window.dispatchEvent(
+              new CustomEvent("locationAdded", {
+                detail: { location: poiData },
+              }),
+            );
+            this.closePoiInfoWindow();
+          }
+        }
+      });
+
+    infoDiv
+      .querySelector(".set-destination-btn")
+      .addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (locationManager.getAllLocations().length === 0) {
+          showToast("请先添加收藏地点", "warning");
+          return;
+        }
+        this.addDestinationMarker(poiData);
+        window.dispatchEvent(
+          new CustomEvent("destinationSet", {
+            detail: { destination: poiData },
+          }),
+        );
+        this.closePoiInfoWindow();
+      });
+  }
+
+  closePoiInfoWindow() {
+    if (this.poiInfoWindow) {
+      this.map.off("move", this.poiInfoWindow.moveHandler);
+      this.map.off("zoom", this.poiInfoWindow.moveHandler);
+      if (this.poiInfoWindow.el.parentNode) {
+        this.poiInfoWindow.el.parentNode.removeChild(this.poiInfoWindow.el);
+      }
+      this.poiInfoWindow = null;
+    }
+  }
+
+  // --- Marker Methods ---
+
+  addMyLocationMarker(location) {
     const position = [location.longitude, location.latitude];
 
     const marker = new AMap.Marker({
@@ -74,40 +279,15 @@ class MapManager {
       title: location.name,
       icon: new AMap.Icon({
         size: new AMap.Size(24, 36),
-        image: `https://a.amap.com/jsapi_demos/static/demo-center/icons/poi-marker-${["red", "blue", "green", "purple", "orange"][groupIndex % 5]}.png`,
+        image:
+          "https://a.amap.com/jsapi_demos/static/demo-center/icons/poi-marker-blue.png",
         imageSize: new AMap.Size(24, 36),
       }),
       anchor: "bottom-center",
+      zIndex: 100,
     });
 
-    marker.on("click", () => {
-      if (this.selectedMarker) {
-        this.selectedMarker.setIcon(
-          new AMap.Icon({
-            size: new AMap.Size(24, 36),
-            image: `https://a.amap.com/jsapi_demos/static/demo-center/icons/poi-marker-${["red", "blue", "green", "purple", "orange"][this.selectedMarker.groupIndex % 5]}.png`,
-            imageSize: new AMap.Size(24, 36),
-          }),
-        );
-      }
-
-      marker.setIcon(
-        new AMap.Icon({
-          size: new AMap.Size(24, 36),
-          image: `https://a.amap.com/jsapi_demos/static/demo-center/icons/poi-marker-${["red", "blue", "green", "purple", "orange"][groupIndex % 5]}-highlight.png`,
-          imageSize: new AMap.Size(24, 36),
-        }),
-      );
-
-      this.selectedMarker = marker;
-      marker.locationData = location;
-      marker.groupIndex = groupIndex;
-
-      if (onClick) {
-        onClick(location);
-      }
-    });
-
+    // Info window on hover
     const infoWindow = new AMap.InfoWindow({
       content: `<div class="p-2">
         <h3 class="font-semibold text-sm">${location.name}</h3>
@@ -125,34 +305,68 @@ class MapManager {
     });
 
     this.map.add(marker);
-    this.markers.push({ marker, groupIndex, location });
-
-    return marker;
+    this.markers.push({ marker, location });
   }
 
-  toggleGroupMarkers(groupIndex, visible) {
-    this.markers.forEach((item) => {
-      if (item.groupIndex === groupIndex) {
-        if (visible) {
-          item.marker.show();
-        } else {
-          item.marker.hide();
-        }
-      }
+  addDestinationMarker(location) {
+    // Remove old destination marker if exists
+    if (this.destinationMarker) {
+      this.map.remove(this.destinationMarker);
+    }
+
+    const position = [location.longitude, location.latitude];
+
+    this.destinationMarker = new AMap.Marker({
+      position: position,
+      title: "目的地: " + location.name,
+      icon: new AMap.Icon({
+        size: new AMap.Size(30, 42),
+        image:
+          "https://a.amap.com/jsapi_demos/static/demo-center/icons/poi-marker-red.png",
+        imageSize: new AMap.Size(30, 42),
+      }),
+      anchor: "bottom-center",
+      zIndex: 200,
     });
+
+    // Info window
+    const infoWindow = new AMap.InfoWindow({
+      content: `<div class="p-2">
+        <h3 class="font-semibold text-sm text-red-600">📍 目的地</h3>
+        <p class="font-medium text-sm mt-1">${location.name}</p>
+        <p class="text-xs text-gray-600 mt-1">${location.address || "地址不详"}</p>
+      </div>`,
+      offset: new AMap.Pixel(0, -42),
+    });
+
+    this.destinationMarker.on("mouseover", () => {
+      infoWindow.open(this.map, position);
+    });
+
+    this.destinationMarker.on("mouseout", () => {
+      infoWindow.close();
+    });
+
+    this.map.add(this.destinationMarker);
+
+    // Fit view to include destination
+    this.map.setCenter(position);
   }
 
-  removeGroupMarkers(groupIndex) {
-    const groupMarkers = this.markers.filter(
-      (item) => item.groupIndex === groupIndex,
-    );
-    groupMarkers.forEach((item) => {
+  removeMyLocationMarker(index) {
+    if (index >= 0 && index < this.markers.length) {
+      const item = this.markers[index];
       this.map.remove(item.marker);
-    });
-    this.markers = this.markers.filter(
-      (item) => item.groupIndex !== groupIndex,
-    );
+      this.markers.splice(index, 1);
+    }
   }
+
+  clearAllMyLocationMarkers() {
+    this.markers.forEach((item) => this.map.remove(item.marker));
+    this.markers = [];
+  }
+
+  // --- Route Line Methods ---
 
   addRouteLine(path, color = "#3b82f6", width = 4, opacity = 0.8) {
     const polyline = new AMap.Polyline({
@@ -176,12 +390,9 @@ class MapManager {
     this.routeLines = [];
   }
 
-  getAllLocations() {
-    return this.markers.map((item) => item.location);
-  }
-
-  getSelectedOrigin() {
-    return this.selectedMarker ? this.selectedMarker.locationData : null;
+  // Getter for destination
+  getDestination() {
+    return this.destinationMarker ? this.poiInfoWindow?.poiData || null : null;
   }
 }
 

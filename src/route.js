@@ -1,38 +1,73 @@
-import { RateLimiter, showToast, formatDistance, formatDuration } from './utils.js';
-import { mapManager } from './map.js';
-import { locationManager } from './location.js';
+import {
+  RateLimiter,
+  showToast,
+  formatDistance,
+  formatDuration,
+} from "./utils.js";
+import { mapManager } from "./map.js";
+import { locationManager } from "./location.js";
 
 const rateLimiter = new RateLimiter(500); // 1 request per 500ms for route planning
 
 // Transport mode constants
 const TRANSPORT_MODES = {
-  DRIVING: 'driving',
-  TRANSIT: 'transit',
-  WALKING: 'walking',
-  BICYCLING: 'bicycling'
+  DRIVING: "driving",
+  TRANSIT: "transit",
+  WALKING: "walking",
+  BICYCLING: "bicycling",
 };
 
 // Transport mode display names
 const MODE_NAMES = {
-  [TRANSPORT_MODES.DRIVING]: '驾车',
-  [TRANSPORT_MODES.TRANSIT]: '公交',
-  [TRANSPORT_MODES.WALKING]: '步行',
-  [TRANSPORT_MODES.BICYCLING]: '骑行'
+  [TRANSPORT_MODES.DRIVING]: "自驾",
+  [TRANSPORT_MODES.TRANSIT]: "公交",
+  [TRANSPORT_MODES.WALKING]: "步行",
+  [TRANSPORT_MODES.BICYCLING]: "骑行",
 };
 
 // Transport mode colors
 const MODE_COLORS = {
-  [TRANSPORT_MODES.DRIVING]: '#3b82f6',
-  [TRANSPORT_MODES.TRANSIT]: '#8b5cf6',
-  [TRANSPORT_MODES.WALKING]: '#22c55e',
-  [TRANSPORT_MODES.BICYCLING]: '#f59e0b'
+  [TRANSPORT_MODES.DRIVING]: "#3b82f6",
+  [TRANSPORT_MODES.TRANSIT]: "#8b5cf6",
+  [TRANSPORT_MODES.WALKING]: "#22c55e",
+  [TRANSPORT_MODES.BICYCLING]: "#f59e0b",
 };
+
+// Route line palette — opacity/width variants for same-mode multi-routes
+const ROUTE_PALETTE = [
+  { opacity: 0.9, width: 5 },
+  { opacity: 0.65, width: 4 },
+  { opacity: 0.5, width: 3 },
+  { opacity: 0.4, width: 3 },
+];
 
 class RouteManager {
   constructor() {
-    this.currentRoutes = [];
-    this.selectedRoute = null;
+    this.currentResults = []; // [{ origin, routes: { driving, transit, walking, bicycling } }]
+    this.activeMode = TRANSPORT_MODES.DRIVING;
+    this.currentDestination = null;
+    this.currentRouteLines = []; // Track rendered lines for highlighting
   }
+
+  // Plugin name and constructor class mapping for each transport mode
+  static PLUGIN_MAP = {
+    [TRANSPORT_MODES.DRIVING]: {
+      plugin: "AMap.Driving",
+      klass: "AMap.Driving",
+    },
+    [TRANSPORT_MODES.TRANSIT]: {
+      plugin: "AMap.Transfer",
+      klass: "AMap.Transfer",
+    },
+    [TRANSPORT_MODES.WALKING]: {
+      plugin: "AMap.Walking",
+      klass: "AMap.Walking",
+    },
+    [TRANSPORT_MODES.BICYCLING]: {
+      plugin: "AMap.Riding",
+      klass: "AMap.Riding",
+    },
+  };
 
   // Calculate route between two points for a specific transport mode
   async calculateRoute(origin, destination, mode = TRANSPORT_MODES.DRIVING) {
@@ -41,222 +76,372 @@ class RouteManager {
         const originPoint = [origin.longitude, origin.latitude];
         const destinationPoint = [destination.longitude, destination.latitude];
 
-        const serviceName = `AMap.${mode.charAt(0).toUpperCase() + mode.slice(1)}Search`;
+        const pluginConfig = RouteManager.PLUGIN_MAP[mode];
+        if (!pluginConfig) {
+          reject(new Error(`不支持的交通方式: ${mode}`));
+          return;
+        }
 
-        AMap.plugin(serviceName, () => {
-          const routeService = new AMap[serviceName.charAt(0).toUpperCase() + serviceName.slice(1)]({
-            map: null, // Don't auto render on map
-            policy: AMap[mode === 'driving' ? 'DRIVING_POLICY_LEAST_TIME' :
-                        mode === 'transit' ? 'TRANSIT_POLICY_FASTEST' :
-                        mode === 'bicycling' ? 'BICYCLING_POLICY_FASTEST' :
-                        'WALKING_POLICY_DEFAULT']
-          });
+        AMap.plugin(pluginConfig.plugin, () => {
+          // Resolve constructor from dotted path (e.g. "AMap.Driving" → AMap.Driving)
+          const ServiceClass = pluginConfig.klass
+            .split(".")
+            .reduce((obj, key) => obj[key], window);
 
-          routeService.search(originPoint, destinationPoint, (status, result) => {
-            if (status === 'complete' && result.routes && result.routes.length > 0) {
-              const route = result.routes[0];
-              resolve({
-                mode,
-                distance: route.distance,
-                duration: route.duration,
-                path: route.path,
-                steps: mode === 'transit' ? route.transits : route.steps
-              });
-            } else {
-              reject(new Error(`路线计算失败: ${destination.name}`));
-            }
-          });
+          const options = { map: null };
+          if (mode === "driving")
+            options.policy = AMap.DRIVING_POLICY_LEAST_TIME;
+
+          const routeService = new ServiceClass(options);
+
+          routeService.search(
+            originPoint,
+            destinationPoint,
+            (status, result) => {
+              if (
+                status === "complete" &&
+                result.routes &&
+                result.routes.length > 0
+              ) {
+                const route = result.routes[0];
+                // AMap v2 uses `time` (seconds), not `duration`
+                // For transit: path must be assembled from segments (no top-level path)
+                resolve({
+                  mode,
+                  distance: route.distance,
+                  duration: route.time,
+                  path: mode === "transit" ? route.segments : route.path,
+                  steps: mode === "transit" ? route.segments : route.steps,
+                });
+              } else if (status === "no_data") {
+                reject(new Error("NO_DATA"));
+              } else {
+                reject(new Error(`路线计算失败: ${destination.name}`));
+              }
+            },
+          );
         });
       });
     });
   }
 
-  // Calculate routes from origin to all other locations for all transport modes
-  async calculateAllRoutes(origin) {
-    const allLocations = locationManager.getAllLocations().filter(loc =>
-      loc.latitude !== origin.latitude || loc.longitude !== origin.longitude
-    );
+  // Calculate routes from all my-locations to a destination
+  async calculateRoutesToDestination(destination, transportMode = null) {
+    const allLocations = locationManager.getAllLocations();
 
     if (allLocations.length === 0) {
-      showToast('没有其他地点可以计算路线', 'warning');
+      showToast("请先添加收藏地点", "warning");
       return [];
     }
 
-    showToast(`开始计算到 ${allLocations.length} 个地点的路线...`, 'info');
+    // Filter out the destination itself from origins
+    const origins = allLocations.filter(
+      (loc) =>
+        Math.abs(loc.latitude - destination.latitude) > 0.0001 ||
+        Math.abs(loc.longitude - destination.longitude) > 0.0001,
+    );
+
+    if (origins.length === 0) {
+      showToast("收藏地点与目的地相同，无需计算", "warning");
+      return [];
+    }
+
+    showToast(`正在计算 ${origins.length} 条路线...`, "info");
+
+    const modes = transportMode
+      ? [transportMode]
+      : Object.values(TRANSPORT_MODES);
 
     const results = [];
 
-    for (const destination of allLocations) {
+    for (const origin of origins) {
       const routeResults = {};
       let success = false;
 
-      for (const mode of Object.values(TRANSPORT_MODES)) {
+      for (const mode of modes) {
         try {
           const route = await this.calculateRoute(origin, destination, mode);
           routeResults[mode] = route;
           success = true;
         } catch (error) {
-          console.warn(`Failed to calculate ${mode} route to ${destination.name}:`, error);
+          // "NO_DATA" is expected when no route exists for this mode (e.g. no transit in rural area)
+          if (error.message !== "NO_DATA") {
+            console.warn(
+              `Failed to calculate ${mode} route from ${origin.name}:`,
+              error,
+            );
+          }
           routeResults[mode] = null;
         }
       }
 
-      if (success) {
-        results.push({
-          destination,
-          routes: routeResults
-        });
-      }
+      results.push({
+        origin,
+        routes: routeResults,
+        hasError: !success,
+      });
     }
 
-    // Sort results by driving duration (or any available mode)
-    results.sort((a, b) => {
-      const aDur = a.routes.driving?.duration || a.routes.transit?.duration || a.routes.bicycling?.duration || a.routes.walking?.duration || Infinity;
-      const bDur = b.routes.driving?.duration || b.routes.transit?.duration || b.routes.bicycling?.duration || b.routes.walking?.duration || Infinity;
-      return aDur - bDur;
-    });
+    const successCount = results.filter((r) => !r.hasError).length;
+    showToast(
+      `路线计算完成，成功 ${successCount} 条`,
+      successCount === results.length ? "success" : "warning",
+    );
 
-    showToast(`路线计算完成，成功 ${results.length} 个，失败 ${allLocations.length - results.length} 个`,
-      results.length === allLocations.length ? 'success' : 'warning');
-
-    this.currentRoutes = results;
-    this.renderRouteResults(results);
+    this.currentResults = results;
+    this.currentDestination = destination;
+    this.activeMode = transportMode || TRANSPORT_MODES.DRIVING;
 
     return results;
   }
 
-  // Render route results in right panel
-  renderRouteResults(routes) {
-    const container = document.getElementById('pathResults');
+  // Switch transport mode and render all routes for that mode
+  switchTransportMode(mode) {
+    this.activeMode = mode;
 
-    if (routes.length === 0) {
-      container.innerHTML = '<p class="text-sm text-gray-500 italic">暂无路线结果</p>';
-      return;
-    }
-
-    container.innerHTML = routes.map((result, index) => {
-      const { destination, routes: modeRoutes } = result;
-
-      return `
-        <div class="p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer route-result-card"
-             data-result-index="${index}">
-          <h4 class="font-medium text-gray-800 mb-2">${destination.name}</h4>
-          <p class="text-xs text-gray-500 mb-2 truncate">${destination.address || ''}</p>
-
-          <div class="grid grid-cols-2 gap-2 text-xs">
-            ${Object.values(TRANSPORT_MODES).map(mode => {
-              const route = modeRoutes[mode];
-              if (!route) return '';
-
-              return `
-                <div class="flex items-center">
-                  <span class="w-2 h-2 rounded-full mr-1.5" style="background-color: ${MODE_COLORS[mode]}"></span>
-                  <span class="text-gray-700">${MODE_NAMES[mode]}:</span>
-                  <span class="ml-1 font-medium">${formatDistance(route.distance)} / ${formatDuration(route.duration)}</span>
-                </div>
-              `;
-            }).join('')}
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    // Bind click events to route cards
-    document.querySelectorAll('.route-result-card').forEach(card => {
-      card.addEventListener('click', (e) => {
-        const resultIndex = parseInt(e.currentTarget.dataset.resultIndex);
-        const result = routes[resultIndex];
-        this.showRouteOnMap(result);
-      });
-    });
-  }
-
-  // Show selected route on map
-  showRouteOnMap(routeResult) {
-    // Clear existing routes
+    // Clear old route lines
     mapManager.clearRouteLines();
+    this.currentRouteLines = [];
 
-    // Show all transport mode routes for this destination
-    Object.values(TRANSPORT_MODES).forEach(mode => {
-      const route = routeResult.routes[mode];
+    const routesToRender = [];
+    let hasAnyRoute = false;
+
+    this.currentResults.forEach((result, index) => {
+      const route = result.routes[mode];
       if (route && route.path) {
-        mapManager.addRouteLine(route.path, MODE_COLORS[mode], 4, 0.7);
+        // Compute Polyline-compatible path array
+        let pathArray;
+        if (mode === "transit") {
+          // Transit: path is route.segments, assemble from walking + bus steps
+          pathArray = [];
+          if (Array.isArray(route.path)) {
+            route.path.forEach((segment) => {
+              // Each segment may have walking steps and/or bus lines
+              if (segment.walking && segment.walking.steps) {
+                segment.walking.steps.forEach((step) => {
+                  if (step.path && Array.isArray(step.path)) {
+                    pathArray.push(...step.path);
+                  }
+                });
+              }
+              if (segment.transit && segment.transit.segments) {
+                segment.transit.segments.forEach((subSeg) => {
+                  if (subSeg.path && Array.isArray(subSeg.path)) {
+                    pathArray.push(...subSeg.path);
+                  }
+                });
+              }
+              if (
+                segment.bus &&
+                segment.bus.path &&
+                Array.isArray(segment.bus.path)
+              ) {
+                pathArray.push(...segment.bus.path);
+              }
+            });
+          }
+        } else {
+          // Driving/Walking/Riding: route.path is [[lng,lat], ...] — use as-is
+          pathArray = route.path;
+        }
+
+        if (pathArray.length > 0) {
+          hasAnyRoute = true;
+          routesToRender.push({
+            index,
+            origin: result.origin,
+            route,
+            pathArray,
+          });
+        }
       }
     });
 
-    showToast(`已显示到 ${routeResult.destination.name} 的路线`, 'success');
+    if (!hasAnyRoute) {
+      showToast(`无 ${MODE_NAMES[mode]} 路线可用`, "warning");
+      return;
+    }
+
+    // Render all routes to map
+    routesToRender.forEach((item, paletteIdx) => {
+      const palette = ROUTE_PALETTE[paletteIdx % ROUTE_PALETTE.length];
+      const color = MODE_COLORS[mode];
+
+      const polyline = new AMap.Polyline({
+        path: item.pathArray,
+        strokeColor: color,
+        strokeWeight: palette.width,
+        strokeOpacity: palette.opacity,
+        zIndex: 50,
+      });
+
+      polyline._routeIndex = item.index;
+
+      mapManager.map.add(polyline);
+      this.currentRouteLines.push(polyline);
+    });
+
+    mapManager.map.setFitView(this.currentRouteLines);
+
+    showToast(
+      `已显示 ${routesToRender.length} 条${MODE_NAMES[mode]}路线`,
+      "success",
+    );
   }
 
-  // Calculate optimal route visiting multiple points (driving mode only)
-  async calculateOptimalMultiPointRoute() {
-    const allLocations = locationManager.getAllLocations();
-
-    if (allLocations.length < 2) {
-      showToast('至少需要2个地点才能计算最优路线', 'warning');
-      return null;
-    }
-
-    if (allLocations.length > 16) {
-      showToast('最优路线计算最多支持16个地点', 'warning');
-      return null;
-    }
-
-    showToast('正在计算最优路线...', 'info');
-
-    try {
-      // Use Amap Driving Route Planning API with waypoints
-      const origin = [allLocations[0].longitude, allLocations[0].latitude];
-      const destination = [allLocations[allLocations.length - 1].longitude, allLocations[allLocations.length - 1].latitude];
-      const waypoints = allLocations.slice(1, -1).map(loc => [loc.longitude, loc.latitude]);
-
-      return new Promise((resolve, reject) => {
-        AMap.plugin('AMap.Driving', () => {
-          const driving = new AMap.Driving({
-            map: null,
-            policy: AMap.DRIVING_POLICY_LEAST_TIME,
-            waypoints: waypoints,
-            showTraffic: false
-          });
-
-          driving.search(origin, destination, (status, result) => {
-            if (status === 'complete' && result.routes && result.routes.length > 0) {
-              const route = result.routes[0];
-
-              // Clear existing routes
-              mapManager.clearRouteLines();
-
-              // Add optimal route to map
-              mapManager.addRouteLine(route.path, '#f97316', 5, 0.8);
-
-              // Show result
-              const resultContainer = document.getElementById('optimalRouteResult');
-              const distanceEl = document.getElementById('optimalRouteDistance');
-              const timeEl = document.getElementById('optimalRouteTime');
-
-              distanceEl.textContent = `总距离: ${formatDistance(route.distance)}`;
-              timeEl.textContent = `预计时间: ${formatDuration(route.duration)}`;
-              resultContainer.classList.remove('hidden');
-
-              showToast('最优路线计算完成', 'success');
-
-              resolve({
-                distance: route.distance,
-                duration: route.duration,
-                path: route.path,
-                steps: route.steps
-              });
-            } else {
-              showToast('最优路线计算失败', 'error');
-              reject(new Error('Route calculation failed'));
-            }
-          });
+  // Highlight a single route, dim others
+  highlightSingleRoute(routeIndex) {
+    this.currentRouteLines.forEach((line) => {
+      if (line._routeIndex === routeIndex) {
+        line.setOptions({
+          strokeWeight: 6,
+          strokeOpacity: 1,
+          zIndex: 100,
         });
-      });
-    } catch (error) {
-      console.error('Optimal route calculation error:', error);
-      showToast('最优路线计算失败', 'error');
-      return null;
+      } else {
+        line.setOptions({
+          strokeOpacity: 0.2,
+          zIndex: 30,
+        });
+      }
+    });
+  }
+
+  // Reset all route highlights to default
+  resetHighlight() {
+    this.switchTransportMode(this.activeMode);
+  }
+
+  // Render the results panel in right sidebar
+  renderResultsPanel(destination, results, activeMode) {
+    const container = document.getElementById("routeResultsList");
+    if (!container) return;
+
+    this.activeMode = activeMode || TRANSPORT_MODES.DRIVING;
+    this.currentResults = results;
+    this.currentDestination = destination;
+
+    // Update destination display
+    const destDisplay = document.getElementById("destinationDisplay");
+    if (destDisplay) {
+      destDisplay.classList.remove("hidden");
+      const destName = destDisplay.querySelector("#destName");
+      const destAddr = destDisplay.querySelector("#destAddr");
+      if (destName) destName.textContent = destination.name;
+      if (destAddr) destAddr.textContent = destination.address || "";
     }
+
+    // Update mode switch bar
+    this.renderModeSwitchBar(destination, results);
+
+    // Render route list for active mode
+    this.renderRouteList(results, this.activeMode);
+  }
+
+  // Render the transport mode switch bar
+  renderModeSwitchBar(destination, results) {
+    const bar = document.getElementById("modeSwitchBar");
+    if (!bar) return;
+
+    const modes = Object.values(TRANSPORT_MODES);
+
+    bar.innerHTML = modes
+      .map((mode) => {
+        const hasData = results.some((r) => r.routes[mode] !== null);
+        const isActive = mode === this.activeMode;
+
+        return `
+        <button class="mode-btn flex-1 text-xs px-2 py-1.5 rounded font-medium transition-colors
+          ${
+            isActive
+              ? "text-white shadow-sm"
+              : hasData
+                ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                : "bg-gray-50 text-gray-300 cursor-not-allowed"
+          }"
+          style="${isActive ? `background-color: ${MODE_COLORS[mode]}` : ""}"
+          data-mode="${mode}"
+          ${!hasData ? "disabled" : ""}>
+          ${MODE_NAMES[mode]}
+        </button>
+      `;
+      })
+      .join("");
+
+    // Bind mode switch events
+    bar.querySelectorAll(".mode-btn:not([disabled])").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        const mode = e.target.dataset.mode;
+        this.activeMode = mode;
+        this.renderModeSwitchBar(destination, results);
+        this.renderRouteList(results, mode);
+        this.switchTransportMode(mode);
+      });
+    });
+  }
+
+  // Render the route list for the active mode
+  renderRouteList(results, mode) {
+    const container = document.getElementById("routeResultsList");
+    if (!container) return;
+
+    const validResults = results.filter((r) => r.routes[mode] !== null);
+
+    if (validResults.length === 0) {
+      container.innerHTML = `<p class="text-sm text-gray-500 italic">暂无${MODE_NAMES[mode]}路线数据</p>`;
+      return;
+    }
+
+    container.innerHTML = validResults
+      .map((result, idx) => {
+        const originalIndex = results.indexOf(result);
+        const route = result.routes[mode];
+
+        return `
+        <div class="route-card p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer"
+             data-route-index="${originalIndex}">
+          <div class="flex items-center justify-between">
+            <span class="font-medium text-sm text-gray-800">${result.origin.name}</span>
+            <span class="text-xs text-gray-400">→ 目的地</span>
+          </div>
+          <p class="text-xs text-gray-500 mt-1 truncate">${result.origin.address || ""}</p>
+          <div class="flex items-center mt-2 text-xs text-gray-700 space-x-3">
+            <span class="flex items-center">
+              <span class="w-2 h-2 rounded-full mr-1" style="background-color: ${MODE_COLORS[mode]}"></span>
+              ${formatDistance(route.distance)}
+            </span>
+            <span>⏱ ${formatDuration(route.duration)}</span>
+          </div>
+        </div>
+      `;
+      })
+      .join("");
+
+    // Bind click events for highlighting
+    container.querySelectorAll(".route-card").forEach((card) => {
+      card.addEventListener("click", (e) => {
+        const routeIndex = parseInt(e.currentTarget.dataset.routeIndex);
+        this.highlightSingleRoute(routeIndex);
+
+        // Highlight the card
+        container
+          .querySelectorAll(".route-card")
+          .forEach((c) =>
+            c.classList.remove(
+              "border-blue-400",
+              "bg-blue-50",
+              "ring-1",
+              "ring-blue-300",
+            ),
+          );
+        e.currentTarget.classList.add(
+          "border-blue-400",
+          "bg-blue-50",
+          "ring-1",
+          "ring-blue-300",
+        );
+      });
+    });
   }
 }
 
