@@ -130,7 +130,11 @@ class MapManager {
       // Only show popup if hovering over a map hotspot POI
       if (this._hotspotCache) {
         this.closePoiInfoWindow();
-        this.reverseGeocodeForAddress(lnglat, this._hotspotCache.name);
+        // Use hotspot's actual coordinates, not mouse click position
+        this.reverseGeocodeForAddress(
+          this._hotspotCache.lnglat,
+          this._hotspotCache.name,
+        );
         return;
       }
 
