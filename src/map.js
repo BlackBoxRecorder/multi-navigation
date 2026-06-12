@@ -238,7 +238,7 @@ class MapManager {
 
     const infoDiv = document.createElement("div");
     infoDiv.className =
-      "absolute z-[100] bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[220px]";
+      "absolute z-[100] bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[280px]";
     infoDiv.style.transform = "translate(-50%, -120%)";
 
     infoDiv.innerHTML = `
