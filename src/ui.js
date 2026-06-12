@@ -37,7 +37,7 @@ class UIManager {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
               d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
           </svg>
-          <p class="text-sm">点击地图上的 POI 添加地点</p>
+          <p class="text-sm">右键点击地图上的蓝色标记添加地点</p>
         </div>
       `;
       return;
@@ -205,7 +205,7 @@ class UIManager {
     }
     if (this.routeResultsList) {
       this.routeResultsList.innerHTML = `
-        <p class="text-sm text-gray-500 italic">点击地图 POI 并设为目的地以计算路线</p>
+        <p class="text-sm text-gray-500 italic">右键点击地图上蓝色标记的地点并设为目的地以计算路线</p>
       `;
     }
     const modeBtns = document.getElementById('modeBtns');

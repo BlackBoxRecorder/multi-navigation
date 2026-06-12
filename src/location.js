@@ -1,7 +1,7 @@
 import { showToast } from './utils.js';
 
 const MAX_LOCATIONS = 20;
-const STORAGE_KEY = 'mapdemo_my_locations';
+const STORAGE_KEY = 'map_my_locations';
 
 class LocationManager {
   constructor() {
@@ -78,12 +78,11 @@ class LocationManager {
 
     // Check for duplicates （tolerance ~10m）
     if (this.hasLocation(location.latitude, location.longitude)) {
-      showToast('该地点已收藏', 'warning');
+      showToast('有相近地点已收藏', 'warning');
       return false;
     }
 
     this.locations.push(location);
-    showToast(`已添加: ${location.name}`, 'success');
     return true;
   }
 
@@ -113,7 +112,6 @@ class LocationManager {
     this.locations = [];
     localStorage.removeItem(STORAGE_KEY);
     showToast(`已清空 ${count} 个地点`, 'info');
-    window.dispatchEvent(new CustomEvent('locationsCleared', { detail: { count } }));
   }
 
   // Get all locations

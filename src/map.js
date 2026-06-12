@@ -7,8 +7,10 @@ class MapManager {
   constructor() {
     this.map = null;
     this.markers = [];
+    this.tooltips = [];
     this.routeLines = [];
     this.destinationMarker = null;
+    this.destinationTooltip = null;
     this.poiInfoWindow = null;
   }
 
@@ -109,7 +111,7 @@ class MapManager {
     });
 
     this.map.on('rightclick', (e) => {
-      // Check if right-click is near an existing saved marker
+      // 优先级1：右键点击已有收藏标记附近 → 弹出该地点的信息窗
       const nearMarkerData = this.getNearMarkerData(e);
       if (nearMarkerData) {
         this.closePoiInfoWindow();
@@ -118,10 +120,10 @@ class MapManager {
         return;
       }
 
-      // Only show popup if hovering over a map hotspot POI
+      // 优先级2：右键点击地图POI热点（未收藏）→ 逆地理编码后弹出添加收藏弹窗
       if (this._hotspotCache) {
         this.closePoiInfoWindow();
-        // Use hotspot's actual coordinates, not mouse click position
+        // 使用 hotspot 缓存的实际坐标，而非鼠标点击位置（更精准）
         this.reverseGeocodeForAddress(this._hotspotCache.lnglat, this._hotspotCache.name);
         return;
       }
@@ -322,8 +324,8 @@ class MapManager {
       position: position,
       title: location.name,
       content:
-        '<div style="width:24px;height:36px;">' +
-        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36">' +
+        '<div style="width:16px;height:24px;">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="24" viewBox="0 0 24 36">' +
         '<path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24C24 5.373 18.627 0 12 0z" ' +
         'fill="#3b82f6" stroke="#1d4ed8" stroke-width="1.5"/>' +
         '<circle cx="12" cy="10" r="4.5" fill="white"/>' +
@@ -332,31 +334,75 @@ class MapManager {
       zIndex: 100,
     });
 
-    // Info window on hover
-    const infoWindow = new AMap.InfoWindow({
-      content: `<div class="p-2">
-        <h3 class="font-semibold text-sm">${location.name}</h3>
-        <p class="text-xs text-gray-600 mt-1">${location.address || '地址不详'}</p>
-      </div>`,
-      offset: new AMap.Pixel(0, -36),
-    });
+    // DOM tooltip: outer (pointer-events:none) for positioning, inner (pointer-events:auto) for hover
+    // Container bottom = marker top; inner div with spacer fills entire 90px, creating seamless hover zone
+    const container = this.map.getContainer();
+    const tooltip = document.createElement('div');
+    tooltip.style.cssText =
+      'position:absolute;z-index:1000;pointer-events:none;display:none;width:0;height:90px;';
+    tooltip.innerHTML = `<div class="tooltip-inner" style="pointer-events:auto;position:relative;display:flex;flex-direction:column;align-items:center;transform:translateX(-50%);">
+      <div style="background:white;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.15);padding:8px 12px;font-size:13px;line-height:1.4;white-space:nowrap;">
+        <div style="font-weight:600;">${location.name}</div>
+        <div style="color:#4b5563;font-size:12px;margin-top:2px;">${location.address || '地址不详'}</div>
+      </div>
+      <div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:8px solid white;margin-top:-1px;"></div>
+      <div style="width:30px;flex:1;background:transparent;"></div>
+    </div>`;
+    container.appendChild(tooltip);
 
-    marker.on('mouseover', () => {
-      infoWindow.open(this.map, position);
-    });
+    const updateTooltipPos = () => {
+      const pixel = this.map.lngLatToContainer(position);
+      tooltip.style.left = pixel.x + 'px';
+      tooltip.style.bottom = container.clientHeight - pixel.y + 24 + 'px';
+    };
 
-    marker.on('mouseout', () => {
-      infoWindow.close();
+    const moveHandler = () => updateTooltipPos();
+    this.map.on('move', moveHandler);
+    this.map.on('zoom', moveHandler);
+    this.map.on('resize', moveHandler);
+
+    let closeTimer = null;
+    const show = () => {
+      if (closeTimer) {
+        clearTimeout(closeTimer);
+        closeTimer = null;
+      }
+      updateTooltipPos();
+      tooltip.style.display = 'block';
+    };
+    const hide = () => {
+      closeTimer = setTimeout(() => {
+        tooltip.style.display = 'none';
+      }, 80);
+    };
+
+    const tooltipInner = tooltip.querySelector('.tooltip-inner');
+    marker.on('mouseover', show);
+    marker.on('mouseout', hide);
+    tooltipInner.addEventListener('mouseenter', () => {
+      if (closeTimer) {
+        clearTimeout(closeTimer);
+        closeTimer = null;
+      }
     });
+    tooltipInner.addEventListener('mouseleave', hide);
 
     this.map.add(marker);
     this.markers.push({ marker, location });
+    this.tooltips.push({ el: tooltip, moveHandler });
   }
 
   addDestinationMarker(location) {
-    // Remove old destination marker if exists
+    // Remove old destination marker and tooltip if exists
     if (this.destinationMarker) {
       this.map.remove(this.destinationMarker);
+    }
+    if (this.destinationTooltip) {
+      this.map.off('move', this.destinationTooltip.moveHandler);
+      this.map.off('zoom', this.destinationTooltip.moveHandler);
+      this.map.off('resize', this.destinationTooltip.moveHandler);
+      this.destinationTooltip.el.remove();
+      this.destinationTooltip = null;
     }
 
     const position = [location.longitude, location.latitude];
@@ -365,8 +411,8 @@ class MapManager {
       position: position,
       title: '目的地: ' + location.name,
       content:
-        '<div style="width:30px;height:42px;">' +
-        '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="42" viewBox="0 0 30 42">' +
+        '<div style="width:16px;height:24px;">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="24" viewBox="0 0 30 42">' +
         '<path d="M15 0C6.716 0 0 6.716 0 15c0 11.25 15 27 15 27s15-15.75 15-27C30 6.716 23.284 0 15 0z" ' +
         'fill="#ef4444" stroke="#b91c1c" stroke-width="1.5"/>' +
         '<circle cx="15" cy="13" r="5.5" fill="white"/>' +
@@ -375,25 +421,62 @@ class MapManager {
       zIndex: 200,
     });
 
-    // Info window
-    const infoWindow = new AMap.InfoWindow({
-      content: `<div class="p-2">
-        <h3 class="font-semibold text-sm text-red-600">📍 目的地</h3>
-        <p class="font-medium text-sm mt-1">${location.name}</p>
-        <p class="text-xs text-gray-600 mt-1">${location.address || '地址不详'}</p>
-      </div>`,
-      offset: new AMap.Pixel(0, -42),
-    });
+    // DOM tooltip: outer (pointer-events:none) for positioning, inner (pointer-events:auto) for hover
+    // Container bottom = marker top; inner div with spacer fills entire 90px, creating seamless hover zone
+    const container = this.map.getContainer();
+    const tooltip = document.createElement('div');
+    tooltip.style.cssText =
+      'position:absolute;z-index:1000;pointer-events:none;display:none;width:0;height:90px;';
+    tooltip.innerHTML = `<div class="dest-tooltip-inner" style="pointer-events:auto;position:relative;display:flex;flex-direction:column;align-items:center;transform:translateX(-50%);">
+      <div style="background:white;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.15);padding:8px 12px;font-size:13px;line-height:1.4;white-space:nowrap;">
+        <div style="font-weight:600;color:#dc2626;">📍 目的地</div>
+        <div style="font-weight:500;margin-top:2px;">${location.name}</div>
+        <div style="color:#4b5563;font-size:12px;margin-top:2px;">${location.address || '地址不详'}</div>
+      </div>
+      <div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:8px solid white;margin-top:-1px;"></div>
+      <div style="width:30px;flex:1;background:transparent;"></div>
+    </div>`;
+    container.appendChild(tooltip);
 
-    this.destinationMarker.on('mouseover', () => {
-      infoWindow.open(this.map, position);
-    });
+    const updateTooltipPos = () => {
+      const pixel = this.map.lngLatToContainer(position);
+      tooltip.style.left = pixel.x + 'px';
+      tooltip.style.bottom = container.clientHeight - pixel.y + 24 + 'px';
+    };
 
-    this.destinationMarker.on('mouseout', () => {
-      infoWindow.close();
+    const moveHandler = () => updateTooltipPos();
+    this.map.on('move', moveHandler);
+    this.map.on('zoom', moveHandler);
+    this.map.on('resize', moveHandler);
+
+    let closeTimer = null;
+    const show = () => {
+      if (closeTimer) {
+        clearTimeout(closeTimer);
+        closeTimer = null;
+      }
+      updateTooltipPos();
+      tooltip.style.display = 'block';
+    };
+    const hide = () => {
+      closeTimer = setTimeout(() => {
+        tooltip.style.display = 'none';
+      }, 80);
+    };
+
+    const tooltipInner = tooltip.querySelector('.dest-tooltip-inner');
+    this.destinationMarker.on('mouseover', show);
+    this.destinationMarker.on('mouseout', hide);
+    tooltipInner.addEventListener('mouseenter', () => {
+      if (closeTimer) {
+        clearTimeout(closeTimer);
+        closeTimer = null;
+      }
     });
+    tooltipInner.addEventListener('mouseleave', hide);
 
     this.map.add(this.destinationMarker);
+    this.destinationTooltip = { el: tooltip, moveHandler };
 
     // Fit view to include destination
     this.map.setCenter(position);
@@ -404,12 +487,28 @@ class MapManager {
       const item = this.markers[index];
       this.map.remove(item.marker);
       this.markers.splice(index, 1);
+      // Clean up associated tooltip
+      if (this.tooltips[index]) {
+        const t = this.tooltips[index];
+        this.map.off('move', t.moveHandler);
+        this.map.off('zoom', t.moveHandler);
+        this.map.off('resize', t.moveHandler);
+        t.el.remove();
+        this.tooltips.splice(index, 1);
+      }
     }
   }
 
   clearAllMyLocationMarkers() {
     this.markers.forEach((item) => this.map.remove(item.marker));
     this.markers = [];
+    this.tooltips.forEach((t) => {
+      this.map.off('move', t.moveHandler);
+      this.map.off('zoom', t.moveHandler);
+      this.map.off('resize', t.moveHandler);
+      t.el.remove();
+    });
+    this.tooltips = [];
   }
 
   // --- Route Line Methods ---

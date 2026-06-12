@@ -23,7 +23,7 @@ const MODE_NAMES = {
 // Transport mode colors
 const MODE_COLORS = {
   [TRANSPORT_MODES.DRIVING]: '#3b82f6',
-  [TRANSPORT_MODES.TRANSIT]: '#8b5cf6',
+  [TRANSPORT_MODES.TRANSIT]: '#07cfb4ff',
   [TRANSPORT_MODES.WALKING]: '#22c55e',
   [TRANSPORT_MODES.BICYCLING]: '#f59e0b',
 };
@@ -40,11 +40,11 @@ const ORIGIN_COLORS = [
 
 // Sub-route styles — different color + dash pattern for each alternative route in multi-route mode
 const SUB_ROUTE_STYLES = [
-  { color: '#ef4444', dashPattern: null }, // 实线 — 方案1
-  { color: '#3b82f6', dashPattern: [12, 6] }, // 长虚线 — 方案2
-  { color: '#22c55e', dashPattern: [4, 8] }, // 短虚线(点状) — 方案3
-  { color: '#f59e0b', dashPattern: [8, 4, 2, 4] }, // 点划线 — 方案4
-  { color: '#8b5cf6', dashPattern: [20, 4, 2, 4] }, // 长划点 — 方案5
+  { color: '#ef4444', dashPattern: null },
+  { color: '#3b82f6', dashPattern: null },
+  { color: '#22c55e', dashPattern: null },
+  { color: '#f59e0b', dashPattern: null },
+  { color: '#8b5cf6', dashPattern: null },
 ];
 
 class RouteManager {

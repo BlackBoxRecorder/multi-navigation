@@ -61,7 +61,6 @@ function initResizeHandles() {
 async function initApp() {
   try {
     await mapManager.init();
-    showToast('地图加载成功', 'success');
 
     // Init resizable sidebars
     initResizeHandles();
@@ -72,7 +71,6 @@ async function initApp() {
     if (savedLocations.length > 0) {
       savedLocations.forEach((loc) => mapManager.addMyLocationMarker(loc));
       uiManager.renderMyLocations();
-      showToast(`已恢复 ${savedLocations.length} 个收藏地点`, 'info');
     }
 
     // Listen for location added events
