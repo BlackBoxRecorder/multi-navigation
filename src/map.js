@@ -324,12 +324,9 @@ class MapManager {
       position: position,
       title: location.name,
       content:
-        '<div style="width:16px;height:24px;">' +
-        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="24" viewBox="0 0 24 36">' +
-        '<path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24C24 5.373 18.627 0 12 0z" ' +
-        'fill="#3b82f6" stroke="#1d4ed8" stroke-width="1.5"/>' +
-        '<circle cx="12" cy="10" r="4.5" fill="white"/>' +
-        '</svg></div>',
+        '<div style="width:28px;height:28px;">' +
+        `<svg t="1781248210821" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="23184" width="28" height="28"><path d="M536.217 90.69c-168.027 0-302.524 134.497-302.524 302.524 0 120.961 87.056 215.095 181.191 336.055 32.786 45.949 58.866 91.9 92.023 150.268 1.74 3.105 3.974 5.961 6.582 8.321 5.588 5.091 12.047 9.438 22.726 9.438v0c11.425 0 18.007-4.844 23.844-10.432 1.986-1.862 3.726-4.098 5.217-6.334 33.158-52.409 59.362-98.481 92.273-144.556 94.135-127.666 181.191-221.801 181.191-342.761 0-168.027-134.497-302.524-302.524-302.524v0zM536.217 494.055c-53.774 0-100.842-40.362-100.842-100.842s40.362-100.842 100.842-100.842c53.774 0 100.842 40.362 100.842 100.842 0 53.774-40.362 100.842-100.842 100.842v0z" fill="#47bd46" p-id="23185"></path><path d="M536.217 770.624c-140.334 0-254.091 53.525-254.091 119.47s113.757 119.47 254.091 119.47 254.091-53.525 254.091-119.47-113.757-119.47-254.091-119.47zM536.217 938.651c-105.561 0-191.003-37.505-191.003-78.735s85.566-74.886 191.003-74.886 191.003 33.532 191.003 74.886-85.566 78.735-191.003 78.735z" fill="#47bd46" p-id="23186"></path></svg>` +
+        '</div>',
       anchor: 'bottom-center',
       zIndex: 100,
     });
@@ -353,7 +350,7 @@ class MapManager {
     const updateTooltipPos = () => {
       const pixel = this.map.lngLatToContainer(position);
       tooltip.style.left = pixel.x + 'px';
-      tooltip.style.bottom = container.clientHeight - pixel.y + 24 + 'px';
+      tooltip.style.bottom = container.clientHeight - pixel.y - 4 + 'px';
     };
 
     const moveHandler = () => updateTooltipPos();
@@ -411,12 +408,9 @@ class MapManager {
       position: position,
       title: '目的地: ' + location.name,
       content:
-        '<div style="width:16px;height:24px;">' +
-        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="24" viewBox="0 0 30 42">' +
-        '<path d="M15 0C6.716 0 0 6.716 0 15c0 11.25 15 27 15 27s15-15.75 15-27C30 6.716 23.284 0 15 0z" ' +
-        'fill="#ef4444" stroke="#b91c1c" stroke-width="1.5"/>' +
-        '<circle cx="15" cy="13" r="5.5" fill="white"/>' +
-        '</svg></div>',
+        '<div style="width:28px;height:28px;">' +
+        `<svg t="1781248311650" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="24161" width="28" height="28"><path d="M516.937143 2.194286C301.129143 3.145143 126.317714 179.529143 127.268571 395.337143c0.877714 202.532571 323.401143 567.552 360.155429 608.475428a45.421714 45.421714 0 0 0 67.949714-0.292571c36.388571-41.252571 355.657143-409.124571 354.742857-611.657143C909.165714 176.054857 732.745143 1.243429 516.937143 2.194286z m2.523428 563.273143a158.72 158.72 0 0 1-159.268571-157.842286 158.72 158.72 0 0 1 157.842286-159.232 158.72 158.72 0 0 1 159.268571 157.805714 158.72 158.72 0 0 1-157.842286 159.268572z" fill="#FF3737" p-id="24162"></path></svg>` +
+        '</div>',
       anchor: 'bottom-center',
       zIndex: 200,
     });
@@ -441,7 +435,7 @@ class MapManager {
     const updateTooltipPos = () => {
       const pixel = this.map.lngLatToContainer(position);
       tooltip.style.left = pixel.x + 'px';
-      tooltip.style.bottom = container.clientHeight - pixel.y + 24 + 'px';
+      tooltip.style.bottom = container.clientHeight - pixel.y + 18 + 'px';
     };
 
     const moveHandler = () => updateTooltipPos();
