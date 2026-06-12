@@ -86,20 +86,14 @@ async function initApp() {
 
       // If there's still a destination set, recalculate routes
       if (routeManager.currentDestination) {
-        routeManager
-          .calculateRoutesToDestination(routeManager.currentDestination)
-          .then((results) => {
-            if (results.length > 0) {
-              routeManager.renderResultsPanel(
-                routeManager.currentDestination,
-                results,
-                routeManager.activeMode,
-              );
-              routeManager.switchTransportMode(routeManager.activeMode);
-            } else {
-              uiManager.showEmptyState();
-            }
-          });
+        routeManager.calculateRoutesToDestination(routeManager.currentDestination).then((results) => {
+          if (results.length > 0) {
+            routeManager.renderResultsPanel(routeManager.currentDestination, results, routeManager.activeMode);
+            routeManager.switchTransportMode(routeManager.activeMode);
+          } else {
+            uiManager.showEmptyState();
+          }
+        });
       }
     });
 

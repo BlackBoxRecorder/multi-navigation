@@ -172,9 +172,7 @@ class MapManager {
                   if (poi.location) {
                     const poiLng = poi.location.lng || poi.location.getLng();
                     const poiLat = poi.location.lat || poi.location.getLat();
-                    const dist = Math.sqrt(
-                      Math.pow(clickLng - poiLng, 2) + Math.pow(clickLat - poiLat, 2),
-                    );
+                    const dist = Math.sqrt(Math.pow(clickLng - poiLng, 2) + Math.pow(clickLat - poiLat, 2));
                     if (dist < minDistance) {
                       minDistance = dist;
                       closestPoi = poi;
@@ -219,8 +217,7 @@ class MapManager {
     const isCollected = locationManager.hasLocation(poiData.latitude, poiData.longitude);
 
     const infoDiv = document.createElement('div');
-    infoDiv.className =
-      'absolute z-[100] bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[280px]';
+    infoDiv.className = 'absolute z-[100] bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[280px]';
     infoDiv.style.transform = 'translate(-50%, -120%)';
 
     infoDiv.innerHTML = `
@@ -229,11 +226,7 @@ class MapManager {
       <p class="text-xs text-gray-500 mb-3 truncate max-w-[200px]">${poiData.address || '地址不详'}</p>
       <div class="flex space-x-2">
         <button class="add-location-btn flex-1 text-xs px-3 py-1.5 rounded font-medium transition-colors
-          ${
-            isCollected
-              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-              : 'bg-blue-500 hover:bg-blue-600 text-white'
-          }"
+          ${isCollected ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600 text-white'}"
           ${isCollected ? 'disabled' : ''}>
           ${isCollected ? '已添加 ✓' : '添加到我的地点'}
         </button>
@@ -335,8 +328,7 @@ class MapManager {
     // Container bottom = marker top; inner div with spacer fills entire 90px, creating seamless hover zone
     const container = this.map.getContainer();
     const tooltip = document.createElement('div');
-    tooltip.style.cssText =
-      'position:absolute;z-index:1000;pointer-events:none;display:none;width:0;height:90px;';
+    tooltip.style.cssText = 'position:absolute;z-index:1000;pointer-events:none;display:none;width:0;height:90px;';
     tooltip.innerHTML = `<div class="tooltip-inner" style="pointer-events:auto;position:relative;display:flex;flex-direction:column;align-items:center;transform:translateX(-50%);">
       <div style="background:white;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.15);padding:8px 12px;font-size:13px;line-height:1.4;white-space:nowrap;">
         <div style="font-weight:600;">${location.name}</div>
@@ -419,8 +411,7 @@ class MapManager {
     // Container bottom = marker top; inner div with spacer fills entire 90px, creating seamless hover zone
     const container = this.map.getContainer();
     const tooltip = document.createElement('div');
-    tooltip.style.cssText =
-      'position:absolute;z-index:1000;pointer-events:none;display:none;width:0;height:90px;';
+    tooltip.style.cssText = 'position:absolute;z-index:1000;pointer-events:none;display:none;width:0;height:90px;';
     tooltip.innerHTML = `<div class="dest-tooltip-inner" style="pointer-events:auto;position:relative;display:flex;flex-direction:column;align-items:center;transform:translateX(-50%);">
       <div style="background:white;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.15);padding:8px 12px;font-size:13px;line-height:1.4;white-space:nowrap;">
         <div style="font-weight:600;color:#dc2626;">📍 目的地</div>

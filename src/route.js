@@ -104,8 +104,7 @@ class RouteManager {
     this.currentRouteLines = [];
 
     const container = document.getElementById('routeResultsList');
-    if (container)
-      container.innerHTML = '<p class="text-sm text-gray-500 italic">正在重新计算路线...</p>';
+    if (container) container.innerHTML = '<p class="text-sm text-gray-500 italic">正在重新计算路线...</p>';
 
     const select = document.getElementById('drivingPolicySelect');
     if (select) select.disabled = true;
@@ -117,8 +116,7 @@ class RouteManager {
         this.switchTransportMode(this.activeMode);
       } else {
         showToast('该策略下无可用路线', 'warning');
-        if (container)
-          container.innerHTML = '<p class="text-sm text-gray-500 italic">该策略下无可用路线</p>';
+        if (container) container.innerHTML = '<p class="text-sm text-gray-500 italic">该策略下无可用路线</p>';
       }
     } finally {
       if (select) select.disabled = false;
@@ -294,11 +292,7 @@ class RouteManager {
     }
 
     // Filter out the destination itself from origins
-    origins = origins.filter(
-      (loc) =>
-        Math.abs(loc.latitude - destination.latitude) > 0.0001 ||
-        Math.abs(loc.longitude - destination.longitude) > 0.0001,
-    );
+    origins = origins.filter((loc) => Math.abs(loc.latitude - destination.latitude) > 0.0001 || Math.abs(loc.longitude - destination.longitude) > 0.0001);
 
     if (origins.length === 0) {
       showToast('收藏地点与目的地相同，无需计算', 'warning');
@@ -343,10 +337,7 @@ class RouteManager {
     }
 
     const successCount = results.filter((r) => !r.hasError).length;
-    showToast(
-      `路线计算完成，成功 ${successCount} 条`,
-      successCount === results.length ? 'success' : 'warning',
-    );
+    showToast(`路线计算完成，成功 ${successCount} 条`, successCount === results.length ? 'success' : 'warning');
 
     this.currentResults = results;
     this.currentDestination = destination;
@@ -424,10 +415,7 @@ class RouteManager {
 
     const pluginConfig = RouteManager.PLUGIN_MAP[mode];
     // Transit needs AMap.Adaptor for panel styling; all modes work fine without it
-    const plugins =
-      mode === TRANSPORT_MODES.TRANSIT
-        ? [pluginConfig.plugin, 'AMap.Adaptor']
-        : [pluginConfig.plugin];
+    const plugins = mode === TRANSPORT_MODES.TRANSIT ? [pluginConfig.plugin, 'AMap.Adaptor'] : [pluginConfig.plugin];
 
     AMap.plugin(plugins, () => {
       const ServiceClass = pluginConfig.klass.split('.').reduce((obj, key) => obj[key], window);
@@ -442,8 +430,7 @@ class RouteManager {
       if (mode === TRANSPORT_MODES.DRIVING) {
         options.policy = DRIVING_POLICIES[this.activeDrivingPolicy].value;
       } else if (mode === TRANSPORT_MODES.TRANSIT) {
-        options.city =
-          (this.currentDestination && this.currentDestination.city) || result.origin.city || '北京';
+        options.city = (this.currentDestination && this.currentDestination.city) || result.origin.city || '北京';
         options.policy = AMap.TransferPolicy.LEAST_TIME;
       }
       // Walking and Riding use default options
@@ -545,9 +532,7 @@ class RouteManager {
 
           // Check if this specific sub-route is highlighted
           const isHighlighted =
-            this._highlightedRoute &&
-            this._highlightedRoute.groupIndex === groupIndex &&
-            this._highlightedRoute.subRouteIdx === subRouteIdx;
+            this._highlightedRoute && this._highlightedRoute.groupIndex === groupIndex && this._highlightedRoute.subRouteIdx === subRouteIdx;
 
           const polyline = new AMap.Polyline({
             path: route.path,
@@ -685,11 +670,7 @@ class RouteManager {
     const modes = Object.values(TRANSPORT_MODES);
 
     // Check if we have any valid results to determine if checkbox should show
-    const hasAnyResults =
-      results &&
-      results.some((r) =>
-        Object.values(TRANSPORT_MODES).some((m) => this._isRouteRenderable(r, m)),
-      );
+    const hasAnyResults = results && results.some((r) => Object.values(TRANSPORT_MODES).some((m) => this._isRouteRenderable(r, m)));
 
     if (modeBtns) {
       modeBtns.innerHTML = modes
@@ -699,13 +680,7 @@ class RouteManager {
 
           return `
         <button class="mode-btn flex-1 text-xs px-2 py-1.5 rounded font-medium transition-colors
-          ${
-            isActive
-              ? 'text-white shadow-sm'
-              : hasData
-                ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                : 'bg-gray-50 text-gray-300 cursor-not-allowed'
-          }"
+          ${isActive ? 'text-white shadow-sm' : hasData ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-gray-50 text-gray-300 cursor-not-allowed'}"
           style="${isActive ? `background-color: ${MODE_COLORS[mode]}` : ''}"
           data-mode="${mode}"
           ${!hasData ? 'disabled' : ''}>
@@ -797,14 +772,9 @@ class RouteManager {
             const isActive = !isMulti && routeIdx === activeIdx;
             // In multi-route mode, check if this sub-route is highlighted
             const isHighlighted =
-              isMulti &&
-              this._highlightedRoute &&
-              this._highlightedRoute.groupIndex === originalIndex &&
-              this._highlightedRoute.subRouteIdx === routeIdx;
+              isMulti && this._highlightedRoute && this._highlightedRoute.groupIndex === originalIndex && this._highlightedRoute.subRouteIdx === routeIdx;
             // Color for dot: ORIGIN_COLORS in single mode, SUB_ROUTE_STYLES in multi mode
-            const dotColor = isMulti
-              ? SUB_ROUTE_STYLES[routeIdx % SUB_ROUTE_STYLES.length].color
-              : ORIGIN_COLORS[originalIndex % ORIGIN_COLORS.length];
+            const dotColor = isMulti ? SUB_ROUTE_STYLES[routeIdx % SUB_ROUTE_STYLES.length].color : ORIGIN_COLORS[originalIndex % ORIGIN_COLORS.length];
 
             const highlightClass = isHighlighted
               ? 'border-blue-400 bg-blue-50 ring-1 ring-blue-300'
@@ -907,11 +877,7 @@ ${routesHtml}
 
         if (isMulti) {
           // Multi-route mode: toggle highlight
-          if (
-            this._highlightedRoute &&
-            this._highlightedRoute.groupIndex === resultIndex &&
-            this._highlightedRoute.subRouteIdx === subRouteIdx
-          ) {
+          if (this._highlightedRoute && this._highlightedRoute.groupIndex === resultIndex && this._highlightedRoute.subRouteIdx === subRouteIdx) {
             // Click same card → cancel highlight
             this._highlightedRoute = null;
           } else {
@@ -927,9 +893,7 @@ ${routesHtml}
           result.activeRouteIndex[mode] = subRouteIdx;
 
           // Replace polyline for this origin on the map
-          const oldLineIdx = this.currentRouteLines.findIndex(
-            (line) => line._routeIndex === resultIndex,
-          );
+          const oldLineIdx = this.currentRouteLines.findIndex((line) => line._routeIndex === resultIndex);
           if (oldLineIdx >= 0) {
             mapManager.map.remove(this.currentRouteLines[oldLineIdx]);
             this.currentRouteLines.splice(oldLineIdx, 1);
@@ -965,11 +929,7 @@ ${routesHtml}
         const wrapper = document.getElementById('routeDetailPanelWrapper');
 
         // Toggle: if panel is showing for the same group, close it; else open
-        if (
-          this._routeDetailResultIndex === groupIndex &&
-          wrapper &&
-          !wrapper.classList.contains('hidden')
-        ) {
+        if (this._routeDetailResultIndex === groupIndex && wrapper && !wrapper.classList.contains('hidden')) {
           this.hideRouteDetailPanel();
         } else {
           this._showNativeRoutePanel(mode, groupIndex);

@@ -99,10 +99,7 @@ class LocationManager {
   // Check if a location already exists （tolerance ~10m）
   hasLocation(lat, lng) {
     const TOLERANCE = 0.0001;
-    return this.locations.some(
-      (loc) =>
-        Math.abs(loc.latitude - lat) < TOLERANCE && Math.abs(loc.longitude - lng) < TOLERANCE,
-    );
+    return this.locations.some((loc) => Math.abs(loc.latitude - lat) < TOLERANCE && Math.abs(loc.longitude - lng) < TOLERANCE);
   }
 
   // Clear all locations
