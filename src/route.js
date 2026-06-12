@@ -326,7 +326,7 @@ class RouteManager {
     // Delegate rendering to _renderOverviewRoutes (handles both modes)
     this._renderOverviewRoutes(mode);
 
-    showToast(`已显示 ${routeCount} 条${MODE_NAMES[mode]}路线`, 'success');
+    //showToast(`已显示 ${routeCount} 条${MODE_NAMES[mode]}路线`, 'success');
   }
 
   // --- Route Detail Panel on Map (Amap Native — all modes) ---
