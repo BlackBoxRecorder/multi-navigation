@@ -1,14 +1,14 @@
-import { locationManager } from "./location.js";
-import { mapManager } from "./map.js";
-import { routeManager } from "./route.js";
-import { showToast } from "./utils.js";
+import { locationManager } from './location.js';
+import { mapManager } from './map.js';
+import { routeManager } from './route.js';
+import { showToast } from './utils.js';
 
 class UIManager {
   constructor() {
-    this.myLocationsList = document.getElementById("myLocationsList");
-    this.routeResultsList = document.getElementById("routeResultsList");
-    this.destinationDisplay = document.getElementById("destinationDisplay");
-    this.clearAllBtn = document.getElementById("clearAllLocationsBtn");
+    this.myLocationsList = document.getElementById('myLocationsList');
+    this.routeResultsList = document.getElementById('routeResultsList');
+    this.destinationDisplay = document.getElementById('destinationDisplay');
+    this.clearAllBtn = document.getElementById('clearAllLocationsBtn');
 
     this.bindEvents();
     this.renderMyLocations();
@@ -18,7 +18,7 @@ class UIManager {
   bindEvents() {
     // Bind clear all button
     if (this.clearAllBtn) {
-      this.clearAllBtn.addEventListener("click", () => this.handleClearAll());
+      this.clearAllBtn.addEventListener('click', () => this.handleClearAll());
     }
   }
 
@@ -48,7 +48,7 @@ class UIManager {
         // Address dedup: if name starts with address, trim the prefix
         let displayName = loc.name;
         if (loc.address && loc.name.startsWith(loc.address)) {
-          displayName = loc.name.replace(loc.address, "").trim();
+          displayName = loc.name.replace(loc.address, '').trim();
         }
 
         return `
@@ -56,7 +56,7 @@ class UIManager {
         <input type="checkbox" class="my-loc-checkbox flex-shrink-0 w-4 h-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400" data-index="${index}">
         <div class="flex-1 min-w-0 ml-2 mr-2">
           <p class="font-medium text-sm text-gray-800 truncate">${displayName}</p>
-          <p class="text-xs text-gray-500 mt-0.5 truncate">${loc.address || "地址不详"}</p>
+          <p class="text-xs text-gray-500 mt-0.5 truncate">${loc.address || '地址不详'}</p>
         </div>
         <button class="remove-location-btn flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors p-1"
                 data-index="${index}"
@@ -68,23 +68,20 @@ class UIManager {
       </div>
     `;
       })
-      .join("");
+      .join('');
 
     // Bind delete events
-    this.myLocationsList
-      .querySelectorAll(".remove-location-btn")
-      .forEach((btn) => {
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const index = parseInt(e.currentTarget.dataset.index);
-          this.handleRemoveLocation(index);
-        });
+    this.myLocationsList.querySelectorAll('.remove-location-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const index = parseInt(e.currentTarget.dataset.index);
+        this.handleRemoveLocation(index);
       });
+    });
   }
 
   // Handle location removal
   handleRemoveLocation(index) {
-    const locations = locationManager.getAllLocations();
     const removed = locationManager.removeLocation(index);
 
     if (removed) {
@@ -93,7 +90,7 @@ class UIManager {
 
       // Dispatch event
       window.dispatchEvent(
-        new CustomEvent("locationRemoved", {
+        new CustomEvent('locationRemoved', {
           detail: { index, location: removed },
         }),
       );
@@ -105,9 +102,7 @@ class UIManager {
 
   // Get indices of selected (checked) locations
   getSelectedLocationIndices() {
-    const checkboxes = this.myLocationsList.querySelectorAll(
-      ".my-loc-checkbox:checked",
-    );
+    const checkboxes = this.myLocationsList.querySelectorAll('.my-loc-checkbox:checked');
     return Array.from(checkboxes).map((cb) => parseInt(cb.dataset.index));
   }
 
@@ -115,11 +110,11 @@ class UIManager {
   handleClearAll() {
     const locations = locationManager.getAllLocations();
     if (locations.length === 0) {
-      showToast("没有可清空的地点", "warning");
+      showToast('没有可清空的地点', 'warning');
       return;
     }
 
-    if (!confirm("确定清空所有收藏地点吗？此操作不可恢复。")) return;
+    if (!confirm('确定清空所有收藏地点吗？此操作不可恢复。')) return;
 
     // Clear route state first (removes route lines from map)
     routeManager.resetState();
@@ -138,65 +133,65 @@ class UIManager {
 
   // Initialize help modal interactions
   initHelpModal() {
-    const modal = document.getElementById("helpModal");
-    const helpBtn = document.getElementById("helpBtn");
-    const closeBtn = document.getElementById("helpModalClose");
+    const modal = document.getElementById('helpModal');
+    const helpBtn = document.getElementById('helpBtn');
+    const closeBtn = document.getElementById('helpModalClose');
 
     if (!modal || !helpBtn) return;
 
     // Open modal
-    helpBtn.addEventListener("click", () => {
-      modal.classList.remove("hidden");
+    helpBtn.addEventListener('click', () => {
+      modal.classList.remove('hidden');
     });
 
     // Close modal helpers
     const closeModal = () => {
-      modal.classList.add("hidden");
+      modal.classList.add('hidden');
     };
 
     // Close button
     if (closeBtn) {
-      closeBtn.addEventListener("click", closeModal);
+      closeBtn.addEventListener('click', closeModal);
     }
 
     // Click overlay background
-    modal.addEventListener("click", (e) => {
+    modal.addEventListener('click', (e) => {
       if (e.target === modal) closeModal();
     });
 
     // ESC key
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !modal.classList.contains("hidden")) {
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
         closeModal();
       }
     });
 
     // Tab switching
-    const tabBtns = modal.querySelectorAll(".help-tab-btn");
-    const tabContents = modal.querySelectorAll(".help-tab-content");
+    const tabBtns = modal.querySelectorAll('.help-tab-btn');
+    const tabContents = modal.querySelectorAll('.help-tab-content');
 
     tabBtns.forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener('click', () => {
         const targetTab = btn.dataset.tab;
 
         // Update tab button styles
         tabBtns.forEach((b) => {
-          b.classList.remove("border-blue-500", "text-blue-600");
-          b.classList.add("border-transparent", "text-gray-500");
+          b.classList.remove('border-blue-500', 'text-blue-600');
+          b.classList.add('border-transparent', 'text-gray-500');
         });
-        btn.classList.add("border-blue-500", "text-blue-600");
-        btn.classList.remove("border-transparent", "text-gray-500");
+        btn.classList.add('border-blue-500', 'text-blue-600');
+        btn.classList.remove('border-transparent', 'text-gray-500');
 
         // Show/hide tab content
         tabContents.forEach((content) => {
-          if (content.id === "helpTabFeatures" && targetTab === "features") {
-            content.classList.remove("hidden");
-          } else if (content.id === "helpTabGuide" && targetTab === "guide") {
-            content.classList.remove("hidden");
-          } else if (content.id === "helpTabVideo" && targetTab === "video") {
-            content.classList.remove("hidden");
+          if (content.id === 'helpTabFeatures' && targetTab === 'features') {
+            content.classList.remove('hidden');
+          } else if (content.id === 'helpTabGuide' && targetTab === 'guide') {
+            content.classList.remove('hidden');
+          } else if (content.id === 'helpTabVideo' && targetTab === 'video') {
+            content.classList.remove('hidden');
           } else {
-            content.classList.add("hidden");
+            content.classList.add('hidden');
           }
         });
       });
@@ -206,20 +201,20 @@ class UIManager {
   // Show empty state in right panel
   showEmptyState() {
     if (this.destinationDisplay) {
-      this.destinationDisplay.classList.add("hidden");
+      this.destinationDisplay.classList.add('hidden');
     }
     if (this.routeResultsList) {
       this.routeResultsList.innerHTML = `
         <p class="text-sm text-gray-500 italic">点击地图 POI 并设为目的地以计算路线</p>
       `;
     }
-    const modeBtns = document.getElementById("modeBtns");
+    const modeBtns = document.getElementById('modeBtns');
     if (modeBtns) {
-      modeBtns.innerHTML = "";
+      modeBtns.innerHTML = '';
     }
-    const toggleLabel = document.getElementById("multiRouteToggleLabel");
+    const toggleLabel = document.getElementById('multiRouteToggleLabel');
     if (toggleLabel) {
-      toggleLabel.classList.add("hidden");
+      toggleLabel.classList.add('hidden');
     }
   }
 }

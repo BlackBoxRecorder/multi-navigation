@@ -1,55 +1,50 @@
-import {
-  RateLimiter,
-  showToast,
-  formatDistance,
-  formatDuration,
-} from "./utils.js";
-import { mapManager } from "./map.js";
-import { locationManager } from "./location.js";
+import { RateLimiter, showToast, formatDistance, formatDuration } from './utils.js';
+import { mapManager } from './map.js';
+import { locationManager } from './location.js';
 
 const rateLimiter = new RateLimiter(500); // 1 request per 500ms for route planning
 
 // Transport mode constants
 const TRANSPORT_MODES = {
-  DRIVING: "driving",
-  TRANSIT: "transit",
-  WALKING: "walking",
-  BICYCLING: "bicycling",
+  DRIVING: 'driving',
+  TRANSIT: 'transit',
+  WALKING: 'walking',
+  BICYCLING: 'bicycling',
 };
 
 // Transport mode display names
 const MODE_NAMES = {
-  [TRANSPORT_MODES.DRIVING]: "自驾",
-  [TRANSPORT_MODES.TRANSIT]: "公交",
-  [TRANSPORT_MODES.WALKING]: "步行",
-  [TRANSPORT_MODES.BICYCLING]: "骑行",
+  [TRANSPORT_MODES.DRIVING]: '自驾',
+  [TRANSPORT_MODES.TRANSIT]: '公交',
+  [TRANSPORT_MODES.WALKING]: '步行',
+  [TRANSPORT_MODES.BICYCLING]: '骑行',
 };
 
 // Transport mode colors
 const MODE_COLORS = {
-  [TRANSPORT_MODES.DRIVING]: "#3b82f6",
-  [TRANSPORT_MODES.TRANSIT]: "#8b5cf6",
-  [TRANSPORT_MODES.WALKING]: "#22c55e",
-  [TRANSPORT_MODES.BICYCLING]: "#f59e0b",
+  [TRANSPORT_MODES.DRIVING]: '#3b82f6',
+  [TRANSPORT_MODES.TRANSIT]: '#8b5cf6',
+  [TRANSPORT_MODES.WALKING]: '#22c55e',
+  [TRANSPORT_MODES.BICYCLING]: '#f59e0b',
 };
 
 // Origin-distinct colors — each origin route gets a unique color for easy identification
 const ORIGIN_COLORS = [
-  "#ef4444", // 红 — 起点 0
-  "#3b82f6", // 蓝 — 起点 1
-  "#22c55e", // 绿 — 起点 2
-  "#8b5cf6", // 紫 — 起点 3
-  "#f59e0b", // 橙 — 起点 4
-  "#06b6d4", // 青 — 起点 5
+  '#ef4444', // 红 — 起点 0
+  '#3b82f6', // 蓝 — 起点 1
+  '#22c55e', // 绿 — 起点 2
+  '#8b5cf6', // 紫 — 起点 3
+  '#f59e0b', // 橙 — 起点 4
+  '#06b6d4', // 青 — 起点 5
 ];
 
 // Sub-route styles — different color + dash pattern for each alternative route in multi-route mode
 const SUB_ROUTE_STYLES = [
-  { color: "#ef4444", dashPattern: null }, // 实线 — 方案1
-  { color: "#3b82f6", dashPattern: [12, 6] }, // 长虚线 — 方案2
-  { color: "#22c55e", dashPattern: [4, 8] }, // 短虚线(点状) — 方案3
-  { color: "#f59e0b", dashPattern: [8, 4, 2, 4] }, // 点划线 — 方案4
-  { color: "#8b5cf6", dashPattern: [20, 4, 2, 4] }, // 长划点 — 方案5
+  { color: '#ef4444', dashPattern: null }, // 实线 — 方案1
+  { color: '#3b82f6', dashPattern: [12, 6] }, // 长虚线 — 方案2
+  { color: '#22c55e', dashPattern: [4, 8] }, // 短虚线(点状) — 方案3
+  { color: '#f59e0b', dashPattern: [8, 4, 2, 4] }, // 点划线 — 方案4
+  { color: '#8b5cf6', dashPattern: [20, 4, 2, 4] }, // 长划点 — 方案5
 ];
 
 class RouteManager {
@@ -68,20 +63,20 @@ class RouteManager {
   // Plugin name and constructor class mapping for each transport mode
   static PLUGIN_MAP = {
     [TRANSPORT_MODES.DRIVING]: {
-      plugin: "AMap.Driving",
-      klass: "AMap.Driving",
+      plugin: 'AMap.Driving',
+      klass: 'AMap.Driving',
     },
     [TRANSPORT_MODES.TRANSIT]: {
-      plugin: "AMap.Transfer",
-      klass: "AMap.Transfer",
+      plugin: 'AMap.Transfer',
+      klass: 'AMap.Transfer',
     },
     [TRANSPORT_MODES.WALKING]: {
-      plugin: "AMap.Walking",
-      klass: "AMap.Walking",
+      plugin: 'AMap.Walking',
+      klass: 'AMap.Walking',
     },
     [TRANSPORT_MODES.BICYCLING]: {
-      plugin: "AMap.Riding",
-      klass: "AMap.Riding",
+      plugin: 'AMap.Riding',
+      klass: 'AMap.Riding',
     },
   };
 
@@ -101,111 +96,104 @@ class RouteManager {
 
         AMap.plugin(pluginConfig.plugin, () => {
           // Resolve constructor from dotted path (e.g. "AMap.Driving" → AMap.Driving)
-          const ServiceClass = pluginConfig.klass
-            .split(".")
-            .reduce((obj, key) => obj[key], window);
+          const ServiceClass = pluginConfig.klass.split('.').reduce((obj, key) => obj[key], window);
 
           const options = { map: null };
-          if (mode === "driving")
-            options.policy = AMap.DrivingPolicy.LEAST_TIME;
-          if (mode === "transit") {
+          if (mode === 'driving') options.policy = AMap.DrivingPolicy.LEAST_TIME;
+          if (mode === 'transit') {
             // city is REQUIRED for transit route planning
-            options.city = destination.city || origin.city || "北京";
+            options.city = destination.city || origin.city || '北京';
             options.policy = AMap.TransferPolicy.LEAST_TIME;
           }
 
           const routeService = new ServiceClass(options);
 
-          routeService.search(
-            originPoint,
-            destinationPoint,
-            (status, result) => {
-              if (status === "complete") {
-                const routes = [];
+          routeService.search(originPoint, destinationPoint, (status, result) => {
+            if (status === 'complete') {
+              const routes = [];
 
-                if (mode === "transit") {
-                  // Transit: result.plans (NOT result.routes)
-                  if (result.plans && result.plans.length > 0) {
-                    result.plans.forEach((plan) => {
-                      const path = [];
-                      plan.segments.forEach((segment) => {
-                        // Walking segments within transit route
-                        if (segment.walking && segment.walking.steps) {
-                          segment.walking.steps.forEach((step) => {
-                            if (step.path) path.push(...step.path);
-                          });
-                        }
-                        // Transit (bus/subway) segments
-                        if (segment.transit && segment.transit.path) {
-                          path.push(...segment.transit.path);
-                        }
-                      });
-                      routes.push({
-                        mode,
-                        distance: plan.distance,
-                        duration: plan.time,
-                        path,
-                        rawResult: result,
-                      });
-                    });
-                  } else {
-                    reject(new Error("NO_DATA"));
-                    return;
-                  }
-                } else if (mode === "bicycling") {
-                  // Riding: route.rides (NOT route.steps)
-                  if (result.routes && result.routes.length > 0) {
-                    result.routes.forEach((route) => {
-                      const path = [];
-                      if (route.rides) {
-                        route.rides.forEach((ride) => {
-                          if (ride.path) path.push(...ride.path);
-                        });
-                      }
-                      routes.push({
-                        mode,
-                        distance: route.distance,
-                        duration: route.time,
-                        path,
-                        rawResult: null,
-                      });
-                    });
-                  } else {
-                    reject(new Error("NO_DATA"));
-                    return;
-                  }
-                } else {
-                  // Driving / Walking: route.steps[].path
-                  if (result.routes && result.routes.length > 0) {
-                    result.routes.forEach((route) => {
-                      const path = [];
-                      if (route.steps) {
-                        route.steps.forEach((step) => {
+              if (mode === 'transit') {
+                // Transit: result.plans (NOT result.routes)
+                if (result.plans && result.plans.length > 0) {
+                  result.plans.forEach((plan) => {
+                    const path = [];
+                    plan.segments.forEach((segment) => {
+                      // Walking segments within transit route
+                      if (segment.walking && segment.walking.steps) {
+                        segment.walking.steps.forEach((step) => {
                           if (step.path) path.push(...step.path);
                         });
                       }
-                      routes.push({
-                        mode,
-                        distance: route.distance,
-                        duration: route.time,
-                        path,
-                        rawResult: null,
-                      });
+                      // Transit (bus/subway) segments
+                      if (segment.transit && segment.transit.path) {
+                        path.push(...segment.transit.path);
+                      }
                     });
-                  } else {
-                    reject(new Error("NO_DATA"));
-                    return;
-                  }
+                    routes.push({
+                      mode,
+                      distance: plan.distance,
+                      duration: plan.time,
+                      path,
+                      rawResult: result,
+                    });
+                  });
+                } else {
+                  reject(new Error('NO_DATA'));
+                  return;
                 }
-
-                resolve(routes);
-              } else if (status === "no_data" || status === "error") {
-                reject(new Error("NO_DATA"));
+              } else if (mode === 'bicycling') {
+                // Riding: route.rides (NOT route.steps)
+                if (result.routes && result.routes.length > 0) {
+                  result.routes.forEach((route) => {
+                    const path = [];
+                    if (route.rides) {
+                      route.rides.forEach((ride) => {
+                        if (ride.path) path.push(...ride.path);
+                      });
+                    }
+                    routes.push({
+                      mode,
+                      distance: route.distance,
+                      duration: route.time,
+                      path,
+                      rawResult: null,
+                    });
+                  });
+                } else {
+                  reject(new Error('NO_DATA'));
+                  return;
+                }
               } else {
-                reject(new Error(`路线计算失败: ${destination.name}`));
+                // Driving / Walking: route.steps[].path
+                if (result.routes && result.routes.length > 0) {
+                  result.routes.forEach((route) => {
+                    const path = [];
+                    if (route.steps) {
+                      route.steps.forEach((step) => {
+                        if (step.path) path.push(...step.path);
+                      });
+                    }
+                    routes.push({
+                      mode,
+                      distance: route.distance,
+                      duration: route.time,
+                      path,
+                      rawResult: null,
+                    });
+                  });
+                } else {
+                  reject(new Error('NO_DATA'));
+                  return;
+                }
               }
-            },
-          );
+
+              resolve(routes);
+            } else if (status === 'no_data' || status === 'error') {
+              reject(new Error('NO_DATA'));
+            } else {
+              reject(new Error(`路线计算失败: ${destination.name}`));
+            }
+          });
         });
       });
     });
@@ -219,15 +207,11 @@ class RouteManager {
   }
 
   // Calculate routes from selected origins (or all my-locations) to a destination
-  async calculateRoutesToDestination(
-    destination,
-    originIndices = null,
-    transportMode = null,
-  ) {
+  async calculateRoutesToDestination(destination, originIndices = null, transportMode = null) {
     const allLocations = locationManager.getAllLocations();
 
     if (allLocations.length === 0) {
-      showToast("请先添加收藏地点", "warning");
+      showToast('请先添加收藏地点', 'warning');
       return [];
     }
 
@@ -240,7 +224,7 @@ class RouteManager {
     }
 
     if (origins.length === 0) {
-      showToast("请至少选择一个地点", "warning");
+      showToast('请至少选择一个地点', 'warning');
       return [];
     }
 
@@ -252,15 +236,13 @@ class RouteManager {
     );
 
     if (origins.length === 0) {
-      showToast("收藏地点与目的地相同，无需计算", "warning");
+      showToast('收藏地点与目的地相同，无需计算', 'warning');
       return [];
     }
 
-    showToast(`正在计算 ${origins.length} 条路线...`, "info");
+    showToast(`正在计算 ${origins.length} 条路线...`, 'info');
 
-    const modes = transportMode
-      ? [transportMode]
-      : Object.values(TRANSPORT_MODES);
+    const modes = transportMode ? [transportMode] : Object.values(TRANSPORT_MODES);
 
     const results = [];
 
@@ -275,11 +257,8 @@ class RouteManager {
           success = true;
         } catch (error) {
           // "NO_DATA" is expected when no route exists for this mode (e.g. no transit in rural area)
-          if (error.message !== "NO_DATA") {
-            console.warn(
-              `Failed to calculate ${mode} route from ${origin.name}:`,
-              error,
-            );
+          if (error.message !== 'NO_DATA') {
+            console.warn(`Failed to calculate ${mode} route from ${origin.name}:`, error);
           }
           routeResults[mode] = [];
         }
@@ -301,7 +280,7 @@ class RouteManager {
     const successCount = results.filter((r) => !r.hasError).length;
     showToast(
       `路线计算完成，成功 ${successCount} 条`,
-      successCount === results.length ? "success" : "warning",
+      successCount === results.length ? 'success' : 'warning',
     );
 
     this.currentResults = results;
@@ -328,13 +307,10 @@ class RouteManager {
       const routes = result.routes[mode];
       if (this.multiRouteMode) {
         if (routes && Array.isArray(routes)) {
-          routeCount += routes.filter(
-            (r) => r.path && r.path.length > 0,
-          ).length;
+          routeCount += routes.filter((r) => r.path && r.path.length > 0).length;
         }
       } else {
-        const activeIdx =
-          (result.activeRouteIndex && result.activeRouteIndex[mode]) || 0;
+        const activeIdx = (result.activeRouteIndex && result.activeRouteIndex[mode]) || 0;
         if (routes && Array.isArray(routes) && routes.length > activeIdx) {
           const route = routes[activeIdx];
           if (route.path && route.path.length > 0) routeCount++;
@@ -343,14 +319,14 @@ class RouteManager {
     });
 
     if (routeCount === 0) {
-      showToast(`无 ${MODE_NAMES[mode]} 路线可用`, "warning");
+      showToast(`无 ${MODE_NAMES[mode]} 路线可用`, 'warning');
       return;
     }
 
     // Delegate rendering to _renderOverviewRoutes (handles both modes)
     this._renderOverviewRoutes(mode);
 
-    showToast(`已显示 ${routeCount} 条${MODE_NAMES[mode]}路线`, "success");
+    showToast(`已显示 ${routeCount} 条${MODE_NAMES[mode]}路线`, 'success');
   }
 
   // --- Route Detail Panel on Map (Amap Native — all modes) ---
@@ -368,17 +344,16 @@ class RouteManager {
     this.currentRouteLines = [];
 
     // Show the panel wrapper
-    const wrapper = document.getElementById("routeDetailPanelWrapper");
-    if (wrapper) wrapper.classList.remove("hidden");
+    const wrapper = document.getElementById('routeDetailPanelWrapper');
+    if (wrapper) wrapper.classList.remove('hidden');
 
     // Clear panel content
-    const panelEl = document.getElementById("routeDetailPanel");
-    if (panelEl) panelEl.innerHTML = "";
+    const panelEl = document.getElementById('routeDetailPanel');
+    if (panelEl) panelEl.innerHTML = '';
 
     // Update title
-    const title = document.getElementById("routeDetailPanelTitle");
-    if (title)
-      title.textContent = `从 ${result.origin.name} (${MODE_NAMES[mode]})`;
+    const title = document.getElementById('routeDetailPanelTitle');
+    if (title) title.textContent = `从 ${result.origin.name} (${MODE_NAMES[mode]})`;
 
     this._routeDetailResultIndex = resultIndex;
 
@@ -386,17 +361,15 @@ class RouteManager {
     // Transit needs AMap.Adaptor for panel styling; all modes work fine without it
     const plugins =
       mode === TRANSPORT_MODES.TRANSIT
-        ? [pluginConfig.plugin, "AMap.Adaptor"]
+        ? [pluginConfig.plugin, 'AMap.Adaptor']
         : [pluginConfig.plugin];
 
     AMap.plugin(plugins, () => {
-      const ServiceClass = pluginConfig.klass
-        .split(".")
-        .reduce((obj, key) => obj[key], window);
+      const ServiceClass = pluginConfig.klass.split('.').reduce((obj, key) => obj[key], window);
 
       const options = {
         map: mapManager.map,
-        panel: "routeDetailPanel",
+        panel: 'routeDetailPanel',
         autoFitView: true,
       };
 
@@ -405,9 +378,7 @@ class RouteManager {
         options.policy = AMap.DrivingPolicy.LEAST_TIME;
       } else if (mode === TRANSPORT_MODES.TRANSIT) {
         options.city =
-          (this.currentDestination && this.currentDestination.city) ||
-          result.origin.city ||
-          "北京";
+          (this.currentDestination && this.currentDestination.city) || result.origin.city || '北京';
         options.policy = AMap.TransferPolicy.LEAST_TIME;
       }
       // Walking and Riding use default options
@@ -416,23 +387,20 @@ class RouteManager {
       this._routeDetailService = service;
 
       const originPoint = [result.origin.longitude, result.origin.latitude];
-      const destPoint = [
-        this.currentDestination.longitude,
-        this.currentDestination.latitude,
-      ];
+      const destPoint = [this.currentDestination.longitude, this.currentDestination.latitude];
 
       service.search(originPoint, destPoint, (status) => {
-        if (status === "complete") {
+        if (status === 'complete') {
           // Amap native panel handles everything: plan tabs, route drawing, markers
         } else {
-          showToast(`${MODE_NAMES[mode]}路线查询失败`, "error");
+          showToast(`${MODE_NAMES[mode]}路线查询失败`, 'error');
           this.hideRouteDetailPanel();
         }
       });
     });
 
     // Bind close button
-    const closeBtn = document.getElementById("routeDetailPanelClose");
+    const closeBtn = document.getElementById('routeDetailPanelClose');
     if (closeBtn) {
       closeBtn.onclick = () => this.hideRouteDetailPanel();
     }
@@ -452,8 +420,8 @@ class RouteManager {
 
   // Internal: close panel + clear service instance, without redrawing overview
   _closeRoutePanelOnly() {
-    const wrapper = document.getElementById("routeDetailPanelWrapper");
-    if (wrapper) wrapper.classList.add("hidden");
+    const wrapper = document.getElementById('routeDetailPanelWrapper');
+    if (wrapper) wrapper.classList.add('hidden');
 
     if (this._routeDetailService) {
       this._routeDetailService.clear();
@@ -521,7 +489,7 @@ class RouteManager {
             strokeColor: style.color,
             strokeWeight: isHighlighted ? 8 : 4,
             strokeOpacity: isHighlighted ? 1.0 : 0.7,
-            strokeStyle: style.dashPattern ? "dashed" : "solid",
+            strokeStyle: style.dashPattern ? 'dashed' : 'solid',
             strokeDasharray: style.dashPattern || undefined,
             showDir: true,
             zIndex: isHighlighted ? 60 : 50,
@@ -542,8 +510,7 @@ class RouteManager {
 
       this.currentResults.forEach((result, index) => {
         const routes = result.routes[mode];
-        const activeIdx =
-          (result.activeRouteIndex && result.activeRouteIndex[mode]) || 0;
+        const activeIdx = (result.activeRouteIndex && result.activeRouteIndex[mode]) || 0;
         if (routes && Array.isArray(routes) && routes.length > activeIdx) {
           const route = routes[activeIdx];
           if (route.path && route.path.length > 0) {
@@ -598,7 +565,7 @@ class RouteManager {
     this._expandedGroupIndex = null;
 
     // Reset checkbox
-    const checkbox = document.getElementById("multiRouteToggle");
+    const checkbox = document.getElementById('multiRouteToggle');
     if (checkbox) checkbox.checked = false;
   }
 
@@ -609,7 +576,7 @@ class RouteManager {
 
   // Render the results panel in right sidebar
   renderResultsPanel(destination, results, activeMode) {
-    const container = document.getElementById("routeResultsList");
+    const container = document.getElementById('routeResultsList');
     if (!container) return;
 
     // Close native route detail panel when new results come in
@@ -622,17 +589,17 @@ class RouteManager {
     // Reset multi-route mode and checkbox for new results
     this.multiRouteMode = false;
     this._highlightedRoute = null;
-    const checkbox = document.getElementById("multiRouteToggle");
+    const checkbox = document.getElementById('multiRouteToggle');
     if (checkbox) checkbox.checked = false;
 
     // Update destination display
-    const destDisplay = document.getElementById("destinationDisplay");
+    const destDisplay = document.getElementById('destinationDisplay');
     if (destDisplay) {
-      destDisplay.classList.remove("hidden");
-      const destName = destDisplay.querySelector("#destName");
-      const destAddr = destDisplay.querySelector("#destAddr");
+      destDisplay.classList.remove('hidden');
+      const destName = destDisplay.querySelector('#destName');
+      const destAddr = destDisplay.querySelector('#destAddr');
       if (destName) destName.textContent = destination.name;
-      if (destAddr) destAddr.textContent = destination.address || "";
+      if (destAddr) destAddr.textContent = destination.address || '';
     }
 
     // Update mode switch bar
@@ -644,11 +611,11 @@ class RouteManager {
 
   // Render the transport mode switch bar
   renderModeSwitchBar(destination, results) {
-    const bar = document.getElementById("modeSwitchBar");
+    const bar = document.getElementById('modeSwitchBar');
     if (!bar) return;
 
-    const modeBtns = document.getElementById("modeBtns");
-    const toggleLabel = document.getElementById("multiRouteToggleLabel");
+    const modeBtns = document.getElementById('modeBtns');
+    const toggleLabel = document.getElementById('multiRouteToggleLabel');
 
     const modes = Object.values(TRANSPORT_MODES);
 
@@ -656,9 +623,7 @@ class RouteManager {
     const hasAnyResults =
       results &&
       results.some((r) =>
-        Object.values(TRANSPORT_MODES).some((m) =>
-          this._isRouteRenderable(r, m),
-        ),
+        Object.values(TRANSPORT_MODES).some((m) => this._isRouteRenderable(r, m)),
       );
 
     if (modeBtns) {
@@ -671,23 +636,23 @@ class RouteManager {
         <button class="mode-btn flex-1 text-xs px-2 py-1.5 rounded font-medium transition-colors
           ${
             isActive
-              ? "text-white shadow-sm"
+              ? 'text-white shadow-sm'
               : hasData
-                ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                : "bg-gray-50 text-gray-300 cursor-not-allowed"
+                ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                : 'bg-gray-50 text-gray-300 cursor-not-allowed'
           }"
-          style="${isActive ? `background-color: ${MODE_COLORS[mode]}` : ""}"
+          style="${isActive ? `background-color: ${MODE_COLORS[mode]}` : ''}"
           data-mode="${mode}"
-          ${!hasData ? "disabled" : ""}>
+          ${!hasData ? 'disabled' : ''}>
           ${MODE_NAMES[mode]}
         </button>
       `;
         })
-        .join("");
+        .join('');
 
       // Bind mode switch events
-      bar.querySelectorAll(".mode-btn:not([disabled])").forEach((btn) => {
-        btn.addEventListener("click", (e) => {
+      bar.querySelectorAll('.mode-btn:not([disabled])').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
           const mode = e.target.dataset.mode;
           this.activeMode = mode;
           this.renderModeSwitchBar(destination, results);
@@ -700,17 +665,17 @@ class RouteManager {
     // Show/hide multi-route checkbox based on whether we have results
     if (toggleLabel) {
       if (hasAnyResults) {
-        toggleLabel.classList.remove("hidden");
+        toggleLabel.classList.remove('hidden');
       } else {
-        toggleLabel.classList.add("hidden");
+        toggleLabel.classList.add('hidden');
       }
     }
 
     // Bind checkbox change event (only once, use a flag to avoid re-binding)
-    const checkbox = document.getElementById("multiRouteToggle");
+    const checkbox = document.getElementById('multiRouteToggle');
     if (checkbox && !checkbox._bound) {
       checkbox._bound = true;
-      checkbox.addEventListener("change", () => {
+      checkbox.addEventListener('change', () => {
         this.setMultiRouteMode(checkbox.checked);
       });
     }
@@ -718,12 +683,10 @@ class RouteManager {
 
   // Render the route list for the active mode (foldable groups)
   renderRouteList(results, mode) {
-    const container = document.getElementById("routeResultsList");
+    const container = document.getElementById('routeResultsList');
     if (!container) return;
 
-    const validResults = results.filter((r) =>
-      this._isRouteRenderable(r, mode),
-    );
+    const validResults = results.filter((r) => this._isRouteRenderable(r, mode));
 
     if (validResults.length === 0) {
       container.innerHTML = `<p class="text-sm text-gray-500 italic">暂无${MODE_NAMES[mode]}路线数据</p>`;
@@ -736,15 +699,13 @@ class RouteManager {
       .map((result) => {
         const originalIndex = results.indexOf(result);
         const routes = result.routes[mode];
-        const activeIdx =
-          (result.activeRouteIndex && result.activeRouteIndex[mode]) || 0;
+        const activeIdx = (result.activeRouteIndex && result.activeRouteIndex[mode]) || 0;
         const routeCount = routes.length;
 
         // In multi-route mode, body visibility is controlled by _expandedGroupIndex
-        const isExpanded =
-          !isMulti || this._expandedGroupIndex === originalIndex;
-        const foldIcon = isExpanded ? "▼" : "▶";
-        const bodyHiddenClass = isExpanded ? "" : "hidden";
+        const isExpanded = !isMulti || this._expandedGroupIndex === originalIndex;
+        const foldIcon = isExpanded ? '▼' : '▶';
+        const bodyHiddenClass = isExpanded ? '' : 'hidden';
 
         // Sub-route cards: color dot style depends on mode
         const routesHtml = routes
@@ -762,17 +723,17 @@ class RouteManager {
               : ORIGIN_COLORS[originalIndex % ORIGIN_COLORS.length];
 
             const highlightClass = isHighlighted
-              ? "border-blue-400 bg-blue-50 ring-1 ring-blue-300"
+              ? 'border-blue-400 bg-blue-50 ring-1 ring-blue-300'
               : isActive
-                ? "border-blue-400 bg-blue-50"
-                : "border-gray-200 hover:border-blue-200 hover:bg-gray-50";
+                ? 'border-blue-400 bg-blue-50'
+                : 'border-gray-200 hover:border-blue-200 hover:bg-gray-50';
 
             return `
           <div class="route-sub-card p-2.5 ml-3 border-l-2 rounded-r cursor-pointer transition-colors ${highlightClass}"
             data-route-index="${originalIndex}"
             data-sub-route="${routeIdx}">
             <div class="flex items-center justify-between">
-              <span class="text-xs font-medium ${isActive || isHighlighted ? "text-blue-700" : "text-gray-700"}">方案${routeIdx + 1}</span>
+              <span class="text-xs font-medium ${isActive || isHighlighted ? 'text-blue-700' : 'text-gray-700'}">方案${routeIdx + 1}</span>
               <span class="text-xs text-gray-400">→ 目的地</span>
             </div>
             <div class="flex items-center mt-1 text-xs text-gray-600 space-x-3">
@@ -785,7 +746,7 @@ class RouteManager {
           </div>
         `;
           })
-          .join("");
+          .join('');
 
         // Detail button: only in single-route mode, placed in group header
         const detailBtnHtml = !isMulti
@@ -793,7 +754,7 @@ class RouteManager {
                   data-group-index="${originalIndex}">
                 详情
               </button>`
-          : "";
+          : '';
 
         return `
         <div class="route-group border border-gray-200 rounded-lg overflow-hidden mb-2">
@@ -814,13 +775,13 @@ ${routesHtml}
         </div>
       `;
       })
-      .join("");
+      .join('');
 
     // Bind fold/unfold on group headers
-    container.querySelectorAll(".route-group-header").forEach((header) => {
-      header.addEventListener("click", (e) => {
+    container.querySelectorAll('.route-group-header').forEach((header) => {
+      header.addEventListener('click', (e) => {
         // Ignore clicks on detail button (handled separately)
-        if (e.target.closest(".route-group-detail-btn")) return;
+        if (e.target.closest('.route-group-detail-btn')) return;
 
         const groupIndex = parseInt(header.dataset.groupIndex);
 
@@ -840,22 +801,22 @@ ${routesHtml}
         }
 
         // Single-route mode: independent fold/unfold
-        const group = header.closest(".route-group");
-        const body = group.querySelector(".route-group-body");
-        const icon = header.querySelector(".fold-icon");
-        if (body.classList.contains("hidden")) {
-          body.classList.remove("hidden");
-          if (icon) icon.textContent = "▼";
+        const group = header.closest('.route-group');
+        const body = group.querySelector('.route-group-body');
+        const icon = header.querySelector('.fold-icon');
+        if (body.classList.contains('hidden')) {
+          body.classList.remove('hidden');
+          if (icon) icon.textContent = '▼';
         } else {
-          body.classList.add("hidden");
-          if (icon) icon.textContent = "▶";
+          body.classList.add('hidden');
+          if (icon) icon.textContent = '▶';
         }
       });
     });
 
     // Bind sub-route card clicks
-    container.querySelectorAll(".route-sub-card").forEach((card) => {
-      card.addEventListener("click", (e) => {
+    container.querySelectorAll('.route-sub-card').forEach((card) => {
+      card.addEventListener('click', (e) => {
         const resultIndex = parseInt(e.currentTarget.dataset.routeIndex);
         const subRouteIdx = parseInt(e.currentTarget.dataset.subRoute);
         const result = results[resultIndex];
@@ -913,17 +874,17 @@ ${routesHtml}
     });
 
     // Bind group header detail button clicks (single-route mode only)
-    container.querySelectorAll(".route-group-detail-btn").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
+    container.querySelectorAll('.route-group-detail-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const groupIndex = parseInt(e.currentTarget.dataset.groupIndex);
-        const wrapper = document.getElementById("routeDetailPanelWrapper");
+        const wrapper = document.getElementById('routeDetailPanelWrapper');
 
         // Toggle: if panel is showing for the same group, close it; else open
         if (
           this._routeDetailResultIndex === groupIndex &&
           wrapper &&
-          !wrapper.classList.contains("hidden")
+          !wrapper.classList.contains('hidden')
         ) {
           this.hideRouteDetailPanel();
         } else {

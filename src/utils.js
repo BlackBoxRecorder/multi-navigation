@@ -7,7 +7,7 @@ export function showToast(message, type = 'info') {
     success: 'bg-green-500',
     error: 'bg-red-500',
     warning: 'bg-yellow-500',
-    info: 'bg-blue-500'
+    info: 'bg-blue-500',
   };
 
   toast.className = `${bgColors[type]} text-white px-4 py-2 rounded-lg shadow-lg transform transition-all duration-300 opacity-0 translate-y-2`;
