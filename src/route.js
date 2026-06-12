@@ -74,6 +74,7 @@ class RouteManager {
   };
 
   // Calculate route between two points for a specific transport mode
+  // Returns an ARRAY of route objects (multiple alternatives from Amap)
   async calculateRoute(origin, destination, mode = TRANSPORT_MODES.DRIVING) {
     return rateLimiter.execute(async () => {
       return new Promise((resolve, reject) => {
@@ -108,27 +109,32 @@ class RouteManager {
             destinationPoint,
             (status, result) => {
               if (status === "complete") {
-                let path, distance, duration;
+                const routes = [];
 
                 if (mode === "transit") {
                   // Transit: result.plans (NOT result.routes)
                   if (result.plans && result.plans.length > 0) {
-                    const plan = result.plans[0];
-                    distance = plan.distance;
-                    duration = plan.time;
-                    path = [];
-                    plan.segments.forEach((segment) => {
-                      // Walking segments within transit route
-                      if (segment.walking && segment.walking.steps) {
-                        segment.walking.steps.forEach((step) => {
-                          if (step.path) path.push(...step.path);
-                        });
-                      }
-                      // Transit (bus/subway) segments
-                      // API structure: segment.transit.path is directly an array of LngLat
-                      if (segment.transit && segment.transit.path) {
-                        path.push(...segment.transit.path);
-                      }
+                    result.plans.forEach((plan) => {
+                      const path = [];
+                      plan.segments.forEach((segment) => {
+                        // Walking segments within transit route
+                        if (segment.walking && segment.walking.steps) {
+                          segment.walking.steps.forEach((step) => {
+                            if (step.path) path.push(...step.path);
+                          });
+                        }
+                        // Transit (bus/subway) segments
+                        if (segment.transit && segment.transit.path) {
+                          path.push(...segment.transit.path);
+                        }
+                      });
+                      routes.push({
+                        mode,
+                        distance: plan.distance,
+                        duration: plan.time,
+                        path,
+                        rawResult: result,
+                      });
                     });
                   } else {
                     reject(new Error("NO_DATA"));
@@ -137,15 +143,21 @@ class RouteManager {
                 } else if (mode === "bicycling") {
                   // Riding: route.rides (NOT route.steps)
                   if (result.routes && result.routes.length > 0) {
-                    const route = result.routes[0];
-                    distance = route.distance;
-                    duration = route.time;
-                    path = [];
-                    if (route.rides) {
-                      route.rides.forEach((ride) => {
-                        if (ride.path) path.push(...ride.path);
+                    result.routes.forEach((route) => {
+                      const path = [];
+                      if (route.rides) {
+                        route.rides.forEach((ride) => {
+                          if (ride.path) path.push(...ride.path);
+                        });
+                      }
+                      routes.push({
+                        mode,
+                        distance: route.distance,
+                        duration: route.time,
+                        path,
+                        rawResult: null,
                       });
-                    }
+                    });
                   } else {
                     reject(new Error("NO_DATA"));
                     return;
@@ -153,24 +165,28 @@ class RouteManager {
                 } else {
                   // Driving / Walking: route.steps[].path
                   if (result.routes && result.routes.length > 0) {
-                    const route = result.routes[0];
-                    distance = route.distance;
-                    duration = route.time;
-                    path = [];
-                    if (route.steps) {
-                      route.steps.forEach((step) => {
-                        if (step.path) path.push(...step.path);
+                    result.routes.forEach((route) => {
+                      const path = [];
+                      if (route.steps) {
+                        route.steps.forEach((step) => {
+                          if (step.path) path.push(...step.path);
+                        });
+                      }
+                      routes.push({
+                        mode,
+                        distance: route.distance,
+                        duration: route.time,
+                        path,
+                        rawResult: null,
                       });
-                    }
+                    });
                   } else {
                     reject(new Error("NO_DATA"));
                     return;
                   }
                 }
 
-                // For transit mode, also return the raw result for detail panel rendering
-                const rawResult = mode === "transit" ? result : null;
-                resolve({ mode, distance, duration, path, rawResult });
+                resolve(routes);
               } else if (status === "no_data" || status === "error") {
                 reject(new Error("NO_DATA"));
               } else {
@@ -183,11 +199,11 @@ class RouteManager {
     });
   }
 
-  // Check if a route result can be rendered on the map (has valid path data)
+  // Check if a route result has at least one renderable route for the given mode
   _isRouteRenderable(result, mode) {
-    const route = result.routes[mode];
-    if (!route) return false;
-    return Array.isArray(route.path) && route.path.length > 0;
+    const routes = result.routes[mode];
+    if (!routes || !Array.isArray(routes) || routes.length === 0) return false;
+    return routes.some((r) => Array.isArray(r.path) && r.path.length > 0);
   }
 
   // Calculate routes from selected origins (or all my-locations) to a destination
@@ -242,8 +258,8 @@ class RouteManager {
 
       for (const mode of modes) {
         try {
-          const route = await this.calculateRoute(origin, destination, mode);
-          routeResults[mode] = route;
+          const routes = await this.calculateRoute(origin, destination, mode);
+          routeResults[mode] = routes;
           success = true;
         } catch (error) {
           // "NO_DATA" is expected when no route exists for this mode (e.g. no transit in rural area)
@@ -253,13 +269,19 @@ class RouteManager {
               error,
             );
           }
-          routeResults[mode] = null;
+          routeResults[mode] = [];
         }
       }
 
       results.push({
         origin,
         routes: routeResults,
+        activeRouteIndex: {
+          [TRANSPORT_MODES.DRIVING]: 0,
+          [TRANSPORT_MODES.TRANSIT]: 0,
+          [TRANSPORT_MODES.WALKING]: 0,
+          [TRANSPORT_MODES.BICYCLING]: 0,
+        },
         hasError: !success,
       });
     }
@@ -292,15 +314,20 @@ class RouteManager {
     let hasAnyRoute = false;
 
     this.currentResults.forEach((result, index) => {
-      const route = result.routes[mode];
-      if (route && route.path && route.path.length > 0) {
-        hasAnyRoute = true;
-        routesToRender.push({
-          index,
-          origin: result.origin,
-          route,
-          pathArray: route.path,
-        });
+      const routes = result.routes[mode];
+      const activeIdx =
+        (result.activeRouteIndex && result.activeRouteIndex[mode]) || 0;
+      if (routes && Array.isArray(routes) && routes.length > activeIdx) {
+        const route = routes[activeIdx];
+        if (route.path && route.path.length > 0) {
+          hasAnyRoute = true;
+          routesToRender.push({
+            index,
+            origin: result.origin,
+            route,
+            pathArray: route.path,
+          });
+        }
       }
     });
 
@@ -452,15 +479,20 @@ class RouteManager {
     let hasAnyRoute = false;
 
     this.currentResults.forEach((result, index) => {
-      const route = result.routes[mode];
-      if (route && route.path && route.path.length > 0) {
-        hasAnyRoute = true;
-        routesToRender.push({
-          index,
-          origin: result.origin,
-          route,
-          pathArray: route.path,
-        });
+      const routes = result.routes[mode];
+      const activeIdx =
+        (result.activeRouteIndex && result.activeRouteIndex[mode]) || 0;
+      if (routes && Array.isArray(routes) && routes.length > activeIdx) {
+        const route = routes[activeIdx];
+        if (route.path && route.path.length > 0) {
+          hasAnyRoute = true;
+          routesToRender.push({
+            index,
+            origin: result.origin,
+            route,
+            pathArray: route.path,
+          });
+        }
       }
     });
 
@@ -576,7 +608,7 @@ class RouteManager {
     });
   }
 
-  // Render the route list for the active mode
+  // Render the route list for the active mode (foldable groups)
   renderRouteList(results, mode) {
     const container = document.getElementById("routeResultsList");
     if (!container) return;
@@ -591,72 +623,137 @@ class RouteManager {
     }
 
     container.innerHTML = validResults
-      .map((result, idx) => {
+      .map((result) => {
         const originalIndex = results.indexOf(result);
-        const route = result.routes[mode];
+        const routes = result.routes[mode];
+        const activeIdx =
+          (result.activeRouteIndex && result.activeRouteIndex[mode]) || 0;
+        const routeCount = routes.length;
+
+        const routesHtml = routes
+          .map((route, routeIdx) => {
+            const isActive = routeIdx === activeIdx;
+            return `
+          <div class="route-sub-card p-2.5 ml-3 border-l-2 rounded-r cursor-pointer transition-colors
+            ${isActive ? "border-blue-400 bg-blue-50" : "border-gray-200 hover:border-blue-200 hover:bg-gray-50"}"
+            data-route-index="${originalIndex}"
+            data-sub-route="${routeIdx}">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-medium ${isActive ? "text-blue-700" : "text-gray-700"}">方案${routeIdx + 1}</span>
+              <div class="flex items-center space-x-1.5">
+                <span class="text-xs text-gray-400">→ 目的地</span>
+                <button class="route-detail-btn text-xs px-2 py-0.5 rounded border border-gray-300 bg-white hover:border-blue-400 hover:text-blue-600 text-gray-500 transition-colors"
+                        data-route-index="${originalIndex}">
+                  详情
+                </button>
+              </div>
+            </div>
+            <div class="flex items-center mt-1 text-xs text-gray-600 space-x-3">
+              <span class="flex items-center">
+                <span class="w-1.5 h-1.5 rounded-full mr-1" style="background-color: ${ORIGIN_COLORS[originalIndex % ORIGIN_COLORS.length]}"></span>
+                ${formatDistance(route.distance)}
+              </span>
+              <span>⏱ ${formatDuration(route.duration)}</span>
+            </div>
+          </div>
+        `;
+          })
+          .join("");
 
         return `
-        <div class="route-card p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer"
-             data-route-index="${originalIndex}">
-          <div class="flex items-center justify-between">
-            <span class="font-medium text-sm text-gray-800">${result.origin.name}</span>
-            <span class="text-xs text-gray-400">→ 目的地</span>
+        <div class="route-group border border-gray-200 rounded-lg overflow-hidden mb-2">
+          <div class="route-group-header flex items-center justify-between p-2.5 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+               data-group-index="${originalIndex}">
+            <div class="flex items-center min-w-0">
+              <span class="text-xs text-gray-400 mr-1.5 fold-icon">▼</span>
+              <span class="font-medium text-sm text-gray-800 truncate">${result.origin.name}</span>
+            </div>
+            <span class="text-xs text-gray-400 flex-shrink-0 ml-2">${MODE_NAMES[mode]} ${routeCount}条</span>
           </div>
-          <p class="text-xs text-gray-500 mt-1 truncate">${result.origin.address || ""}</p>
-          <div class="flex items-center mt-2 text-xs text-gray-700 space-x-3">
-            <span class="flex items-center">
-              <span class="w-2 h-2 rounded-full mr-1" style="background-color: ${ORIGIN_COLORS[idx % ORIGIN_COLORS.length]}"></span>
-              ${formatDistance(route.distance)}
-            </span>
-            <span>⏱ ${formatDuration(route.duration)}</span>
+          <div class="route-group-body">
+${routesHtml}
           </div>
         </div>
       `;
       })
       .join("");
 
-    // Bind click events for highlighting
-    container.querySelectorAll(".route-card").forEach((card) => {
+    // Bind fold/unfold on group headers
+    container.querySelectorAll(".route-group-header").forEach((header) => {
+      header.addEventListener("click", () => {
+        const group = header.closest(".route-group");
+        const body = group.querySelector(".route-group-body");
+        const icon = header.querySelector(".fold-icon");
+        if (body.classList.contains("hidden")) {
+          body.classList.remove("hidden");
+          if (icon) icon.textContent = "▼";
+        } else {
+          body.classList.add("hidden");
+          if (icon) icon.textContent = "▶";
+        }
+      });
+    });
+
+    // Bind sub-route card clicks — switch the active route polyline on map
+    container.querySelectorAll(".route-sub-card").forEach((card) => {
       card.addEventListener("click", (e) => {
-        const routeIndex = parseInt(e.currentTarget.dataset.routeIndex);
+        // Ignore clicks on the detail button (handled separately)
+        if (e.target.closest(".route-detail-btn")) return;
+
+        const resultIndex = parseInt(e.currentTarget.dataset.routeIndex);
+        const subRouteIdx = parseInt(e.currentTarget.dataset.subRoute);
+        const result = results[resultIndex];
+
+        // Update active route index
+        result.activeRouteIndex[mode] = subRouteIdx;
+
+        // Replace polyline for this origin on the map
+        const oldLineIdx = this.currentRouteLines.findIndex(
+          (line) => line._routeIndex === resultIndex,
+        );
+        if (oldLineIdx >= 0) {
+          mapManager.map.remove(this.currentRouteLines[oldLineIdx]);
+          this.currentRouteLines.splice(oldLineIdx, 1);
+        }
+
+        const route = result.routes[mode][subRouteIdx];
+        if (route && route.path && route.path.length > 0) {
+          const color = ORIGIN_COLORS[resultIndex % ORIGIN_COLORS.length];
+          const polyline = new AMap.Polyline({
+            path: route.path,
+            strokeColor: color,
+            strokeWeight: 6,
+            strokeOpacity: 0.8,
+            showDir: true,
+            zIndex: 50,
+          });
+          polyline._routeIndex = resultIndex;
+          mapManager.map.add(polyline);
+          this.currentRouteLines.push(polyline);
+        }
+
+        // Re-render list to update highlights
+        this.renderRouteList(results, mode);
+      });
+    });
+
+    // Bind detail button clicks — toggle native route detail panel
+    container.querySelectorAll(".route-detail-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const resultIndex = parseInt(e.currentTarget.dataset.routeIndex);
         const wrapper = document.getElementById("routeDetailPanelWrapper");
 
-        // Toggle: if panel is showing for the same route, cancel selection
+        // Toggle: if panel is showing for the same origin, close it; else open
         if (
-          this._routeDetailResultIndex === routeIndex &&
+          this._routeDetailResultIndex === resultIndex &&
           wrapper &&
           !wrapper.classList.contains("hidden")
         ) {
           this.hideRouteDetailPanel();
-          e.currentTarget.classList.remove(
-            "border-blue-400",
-            "bg-blue-50",
-            "ring-1",
-            "ring-blue-300",
-          );
-          return;
+        } else {
+          this._showNativeRoutePanel(mode, resultIndex);
         }
-
-        // Highlight the card
-        container
-          .querySelectorAll(".route-card")
-          .forEach((c) =>
-            c.classList.remove(
-              "border-blue-400",
-              "bg-blue-50",
-              "ring-1",
-              "ring-blue-300",
-            ),
-          );
-        e.currentTarget.classList.add(
-          "border-blue-400",
-          "bg-blue-50",
-          "ring-1",
-          "ring-blue-300",
-        );
-
-        // Show native route detail panel on the map
-        this._showNativeRoutePanel(mode, routeIndex);
       });
     });
   }
