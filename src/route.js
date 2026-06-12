@@ -147,6 +147,10 @@ class RouteManager {
   // Calculate route between two points for a specific transport mode
   // Returns an ARRAY of route objects (multiple alternatives from Amap)
   async calculateRoute(origin, destination, mode = TRANSPORT_MODES.DRIVING) {
+    // Capture driving policy at call time to avoid race condition
+    // (the rate limiter may delay execution, and this.activeDrivingPolicy could change in between)
+    const capturedPolicy = mode === TRANSPORT_MODES.DRIVING ? DRIVING_POLICIES[this.activeDrivingPolicy].value : null;
+
     return rateLimiter.execute(async () => {
       return new Promise((resolve, reject) => {
         const originPoint = [origin.longitude, origin.latitude];
@@ -163,7 +167,7 @@ class RouteManager {
           const ServiceClass = pluginConfig.klass.split('.').reduce((obj, key) => obj[key], window);
 
           const options = { map: null };
-          if (mode === 'driving') options.policy = DRIVING_POLICIES[this.activeDrivingPolicy].value;
+          if (mode === 'driving') options.policy = capturedPolicy;
           if (mode === 'transit') {
             // city is REQUIRED for transit route planning
             options.city = destination.city || origin.city || '北京';
@@ -242,7 +246,7 @@ class RouteManager {
                       distance: route.distance,
                       duration: route.time,
                       path,
-                      rawResult: null,
+                      rawResult: mode === 'driving' ? result : null,
                     });
                   });
                 } else {
@@ -392,6 +396,9 @@ class RouteManager {
     const result = this.currentResults[resultIndex];
     if (!result) return;
 
+    // Capture driving policy at call time (consistent with calculateRoute)
+    const capturedPolicy = mode === TRANSPORT_MODES.DRIVING ? DRIVING_POLICIES[this.activeDrivingPolicy].value : null;
+
     // Close previous panel first (without redrawing)
     this._closeRoutePanelOnly();
 
@@ -428,7 +435,7 @@ class RouteManager {
 
       // Mode-specific options
       if (mode === TRANSPORT_MODES.DRIVING) {
-        options.policy = DRIVING_POLICIES[this.activeDrivingPolicy].value;
+        options.policy = capturedPolicy;
       } else if (mode === TRANSPORT_MODES.TRANSIT) {
         options.city = (this.currentDestination && this.currentDestination.city) || result.origin.city || '北京';
         options.policy = AMap.TransferPolicy.LEAST_TIME;
