@@ -213,9 +213,13 @@ class UIManager {
         <p class="text-sm text-gray-500 italic">点击地图 POI 并设为目的地以计算路线</p>
       `;
     }
-    const modeBar = document.getElementById("modeSwitchBar");
-    if (modeBar) {
-      modeBar.innerHTML = "";
+    const modeBtns = document.getElementById("modeBtns");
+    if (modeBtns) {
+      modeBtns.innerHTML = "";
+    }
+    const toggleLabel = document.getElementById("multiRouteToggleLabel");
+    if (toggleLabel) {
+      toggleLabel.classList.add("hidden");
     }
   }
 }

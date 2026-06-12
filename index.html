@@ -214,8 +214,14 @@
       </div>
 
       <!-- Transport Mode Switch Bar -->
-      <div id="modeSwitchBar" class="flex space-x-1 mb-4">
-        <!-- Mode buttons rendered by route.js -->
+      <div id="modeSwitchBar" class="flex items-center space-x-1 mb-4">
+        <div id="modeBtns" class="flex space-x-1">
+          <!-- Mode buttons rendered by route.js -->
+        </div>
+        <label id="multiRouteToggleLabel" class="flex items-center ml-3 pl-3 border-l border-gray-200 cursor-pointer select-none hidden">
+          <input type="checkbox" id="multiRouteToggle" class="w-3.5 h-3.5 text-blue-500 border-gray-300 rounded mr-1.5">
+          <span class="text-xs text-gray-600">多路线</span>
+        </label>
       </div>
 
       <!-- Path Results -->
