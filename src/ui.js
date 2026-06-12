@@ -9,6 +9,7 @@ class UIManager {
     this.routeResultsList = document.getElementById('routeResultsList');
     this.destinationDisplay = document.getElementById('destinationDisplay');
     this.clearAllBtn = document.getElementById('clearAllLocationsBtn');
+    this._selectedIndices = new Set(); // persisted checkbox selection state
 
     this.bindEvents();
     this.renderMyLocations();
@@ -19,6 +20,12 @@ class UIManager {
     // Bind clear all button
     if (this.clearAllBtn) {
       this.clearAllBtn.addEventListener('click', () => this.handleClearAll());
+    }
+
+    // Bind clear routes button
+    const clearRoutesBtn = document.getElementById('clearRoutesBtn');
+    if (clearRoutesBtn) {
+      clearRoutesBtn.addEventListener('click', () => this.handleClearRoutes());
     }
   }
 
@@ -53,7 +60,7 @@ class UIManager {
 
         return `
       <div class="flex items-center p-3 border border-gray-200 rounded-lg bg-white hover:border-blue-200 transition-colors">
-        <input type="checkbox" class="my-loc-checkbox flex-shrink-0 w-4 h-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400" data-index="${index}">
+        <input type="checkbox" class="my-loc-checkbox flex-shrink-0 w-4 h-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400" data-index="${index}" ${this._selectedIndices.has(index) ? 'checked' : ''}>
         <div class="flex-1 min-w-0 ml-2 mr-2">
           <p class="font-medium text-sm text-gray-800 truncate">${displayName}</p>
           <p class="text-xs text-gray-500 mt-0.5 truncate">${loc.address || '地址不详'}</p>
@@ -76,6 +83,18 @@ class UIManager {
         e.stopPropagation();
         const index = parseInt(e.currentTarget.dataset.index);
         this.handleRemoveLocation(index);
+      });
+    });
+
+    // Bind checkbox change events to sync _selectedIndices
+    this.myLocationsList.querySelectorAll('.my-loc-checkbox').forEach((checkbox) => {
+      checkbox.addEventListener('change', (e) => {
+        const idx = parseInt(e.target.dataset.index);
+        if (e.target.checked) {
+          this._selectedIndices.add(idx);
+        } else {
+          this._selectedIndices.delete(idx);
+        }
       });
     });
   }
@@ -102,8 +121,7 @@ class UIManager {
 
   // Get indices of selected (checked) locations
   getSelectedLocationIndices() {
-    const checkboxes = this.myLocationsList.querySelectorAll('.my-loc-checkbox:checked');
-    return Array.from(checkboxes).map((cb) => parseInt(cb.dataset.index));
+    return Array.from(this._selectedIndices).sort((a, b) => a - b);
   }
 
   // Handle clear all button click
@@ -116,8 +134,8 @@ class UIManager {
 
     if (!confirm('确定清空所有收藏地点吗？此操作不可恢复。')) return;
 
-    // Clear route state first (removes route lines from map)
-    routeManager.resetState();
+    // Clear route state first (removes route lines from map + destination marker)
+    routeManager.clearRoutes();
 
     // Clear map markers
     mapManager.clearAllMyLocationMarkers();
@@ -125,6 +143,9 @@ class UIManager {
 
     // Clear location data
     locationManager.clearAll();
+
+    // Clear checkbox state
+    this._selectedIndices.clear();
 
     // Re-render
     this.renderMyLocations();
@@ -196,6 +217,22 @@ class UIManager {
         });
       });
     });
+  }
+
+  // Adjust selected indices when a location is removed
+  _adjustIndicesAfterRemove(removedIndex) {
+    const newSet = new Set();
+    for (const idx of this._selectedIndices) {
+      if (idx > removedIndex) newSet.add(idx - 1);
+      else if (idx < removedIndex) newSet.add(idx);
+      // idx === removedIndex: drop it
+    }
+    this._selectedIndices = newSet;
+  }
+
+  // Handle clear routes button click
+  handleClearRoutes() {
+    routeManager.clearRoutes();
   }
 
   // Show empty state in right panel

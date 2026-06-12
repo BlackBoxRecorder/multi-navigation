@@ -80,21 +80,31 @@ async function initApp() {
     });
 
     // Listen for location removed events
-    window.addEventListener('locationRemoved', () => {
+    window.addEventListener('locationRemoved', (e) => {
+      const { index } = e.detail;
       locationManager.saveToStorage();
-      uiManager.renderMyLocations();
 
-      // If there's still a destination set, recalculate routes
-      if (routeManager.currentDestination) {
-        routeManager.calculateRoutesToDestination(routeManager.currentDestination).then((results) => {
+      // Adjust checkbox selection state (shift indices)
+      uiManager._adjustIndicesAfterRemove(index);
+      // Adjust route origin indices
+      routeManager._adjustOriginIndicesAfterRemove(index);
+
+      // If there's still a destination set, recalculate routes with remaining origins
+      if (routeManager.currentDestination && routeManager._activeOriginIndices.length > 0) {
+        routeManager.calculateRoutesToDestination(routeManager.currentDestination, routeManager._activeOriginIndices).then((results) => {
           if (results.length > 0) {
             routeManager.renderResultsPanel(routeManager.currentDestination, results, routeManager.activeMode);
             routeManager.switchTransportMode(routeManager.activeMode);
           } else {
-            uiManager.showEmptyState();
+            routeManager.clearRoutes();
           }
         });
+      } else if (routeManager._activeOriginIndices.length === 0 && routeManager.currentDestination) {
+        // No remaining origins → clear routes
+        routeManager.clearRoutes();
       }
+
+      uiManager.renderMyLocations();
     });
 
     // Listen for destination set events

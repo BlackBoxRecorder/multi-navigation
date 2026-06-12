@@ -496,6 +496,20 @@ class MapManager {
     this.tooltips = [];
   }
 
+  clearDestinationMarker() {
+    if (this.destinationMarker) {
+      this.map.remove(this.destinationMarker);
+      this.destinationMarker = null;
+    }
+    if (this.destinationTooltip) {
+      this.map.off('move', this.destinationTooltip.moveHandler);
+      this.map.off('zoom', this.destinationTooltip.moveHandler);
+      this.map.off('resize', this.destinationTooltip.moveHandler);
+      this.destinationTooltip.el.remove();
+      this.destinationTooltip = null;
+    }
+  }
+
   // --- Route Line Methods ---
 
   addRouteLine(path, color = '#3b82f6', width = 6, opacity = 0.8) {

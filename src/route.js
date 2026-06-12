@@ -67,6 +67,7 @@ class RouteManager {
     this._highlightedRoute = null; // { groupIndex, subRouteIdx } in multi-route mode
     this._expandedGroupIndex = null; // accordion: only one group expanded at a time in multi-route mode
     this.activeDrivingPolicy = this._loadDrivingPolicy();
+    this._activeOriginIndices = []; // origin indices used for current route calculation
   }
 
   // Load driving policy from localStorage, default to LEAST_TIME
@@ -110,7 +111,7 @@ class RouteManager {
     if (select) select.disabled = true;
 
     try {
-      const results = await this.calculateRoutesToDestination(this.currentDestination);
+      const results = await this.calculateRoutesToDestination(this.currentDestination, this._activeOriginIndices);
       if (results.length > 0) {
         this.renderResultsPanel(this.currentDestination, results, this.activeMode);
         this.switchTransportMode(this.activeMode);
@@ -282,8 +283,10 @@ class RouteManager {
     let origins;
     if (originIndices && originIndices.length > 0) {
       origins = originIndices.map((i) => allLocations[i]).filter(Boolean);
+      this._activeOriginIndices = [...originIndices];
     } else {
       origins = allLocations;
+      this._activeOriginIndices = allLocations.map((_, i) => i);
     }
 
     if (origins.length === 0) {
@@ -335,9 +338,6 @@ class RouteManager {
         hasError: !success,
       });
     }
-
-    const successCount = results.filter((r) => !r.hasError).length;
-    showToast(`路线计算完成，成功 ${successCount} 条`, successCount === results.length ? 'success' : 'warning');
 
     this.currentResults = results;
     this.currentDestination = destination;
@@ -603,11 +603,33 @@ class RouteManager {
     // no-op: native route detail panel renders its own route lines
   }
 
-  // Reset all route state (used when clearing all locations)
-  resetState() {
+  // Adjust origin indices after a location is removed (shift indices down)
+  _adjustOriginIndicesAfterRemove(removedIndex) {
+    this._activeOriginIndices = this._activeOriginIndices.filter((i) => i !== removedIndex).map((i) => (i > removedIndex ? i - 1 : i));
+  }
+
+  // Clear route results UI elements (destination display, route list, mode buttons, etc.)
+  _clearResultsUI() {
+    const destDisplay = document.getElementById('destinationDisplay');
+    if (destDisplay) destDisplay.classList.add('hidden');
+    const container = document.getElementById('routeResultsList');
+    if (container) {
+      container.innerHTML = '<p class="text-sm text-gray-500 italic">点击地图 POI 并设为目的地以计算路线</p>';
+    }
+    const modeBtns = document.getElementById('modeBtns');
+    if (modeBtns) modeBtns.innerHTML = '';
+    const toggleLabel = document.getElementById('multiRouteToggleLabel');
+    if (toggleLabel) toggleLabel.classList.add('hidden');
+    const policySelect = document.getElementById('drivingPolicySelect');
+    if (policySelect) policySelect.classList.add('hidden');
+  }
+
+  // Clear all route results: state, map lines, destination marker, UI
+  clearRoutes() {
     this.hideRouteDetailPanel();
     this.currentResults = [];
     this.currentDestination = null;
+    this._activeOriginIndices = [];
     this.currentRouteLines.forEach((line) => mapManager.map.remove(line));
     this.currentRouteLines = [];
     this.multiRouteMode = false;
@@ -617,6 +639,17 @@ class RouteManager {
     // Reset checkbox
     const checkbox = document.getElementById('multiRouteToggle');
     if (checkbox) checkbox.checked = false;
+
+    // Clear destination marker on map
+    mapManager.clearDestinationMarker();
+
+    // Clear UI
+    this._clearResultsUI();
+  }
+
+  // Reset all route state (used when clearing all locations)
+  resetState() {
+    this.clearRoutes();
   }
 
   // Reset all route highlights — deprecated
