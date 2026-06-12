@@ -28,6 +28,14 @@ const MODE_COLORS = {
   [TRANSPORT_MODES.BICYCLING]: '#f59e0b',
 };
 
+// Driving policy options
+const DRIVING_POLICIES = {
+  LEAST_TIME: { label: '时间最短', value: 0 },
+  LEAST_DISTANCE: { label: '距离最短', value: 2 },
+  LEAST_FEE: { label: '费用最少', value: 1 },
+  REAL_TRAFFIC: { label: '实时路况', value: 3 },
+};
+
 // Origin-distinct colors — each origin route gets a unique color for easy identification
 const ORIGIN_COLORS = [
   '#ef4444', // 红 — 起点 0
@@ -58,6 +66,63 @@ class RouteManager {
     this.multiRouteMode = false; // false=single-route mode (default), true=multi-route mode
     this._highlightedRoute = null; // { groupIndex, subRouteIdx } in multi-route mode
     this._expandedGroupIndex = null; // accordion: only one group expanded at a time in multi-route mode
+    this.activeDrivingPolicy = this._loadDrivingPolicy();
+  }
+
+  // Load driving policy from localStorage, default to LEAST_TIME
+  _loadDrivingPolicy() {
+    try {
+      const saved = localStorage.getItem('drivingPolicy');
+      if (saved && DRIVING_POLICIES[saved]) return saved;
+    } catch (_) {
+      void _;
+      // localStorage unavailable
+    }
+    return 'LEAST_TIME';
+  }
+
+  // Switch driving policy — persists to localStorage, recalculates if in driving mode
+  setDrivingPolicy(policyKey) {
+    if (!DRIVING_POLICIES[policyKey] || this.activeDrivingPolicy === policyKey) return;
+
+    this.activeDrivingPolicy = policyKey;
+    try {
+      localStorage.setItem('drivingPolicy', policyKey);
+    } catch (_) {
+      void _;
+    }
+
+    // If currently in driving mode with a destination, recalculate with new policy
+    if (this.activeMode === TRANSPORT_MODES.DRIVING && this.currentDestination) {
+      this._recalculateWithNewPolicy();
+    }
+  }
+
+  // Clear driving routes and recalculate with current policy
+  async _recalculateWithNewPolicy() {
+    this.currentRouteLines.forEach((line) => mapManager.map.remove(line));
+    this.currentRouteLines = [];
+
+    const container = document.getElementById('routeResultsList');
+    if (container)
+      container.innerHTML = '<p class="text-sm text-gray-500 italic">正在重新计算路线...</p>';
+
+    const select = document.getElementById('drivingPolicySelect');
+    if (select) select.disabled = true;
+
+    try {
+      const results = await this.calculateRoutesToDestination(this.currentDestination);
+      if (results.length > 0) {
+        this.renderResultsPanel(this.currentDestination, results, this.activeMode);
+        this.switchTransportMode(this.activeMode);
+      } else {
+        showToast('该策略下无可用路线', 'warning');
+        if (container)
+          container.innerHTML = '<p class="text-sm text-gray-500 italic">该策略下无可用路线</p>';
+      }
+    } finally {
+      if (select) select.disabled = false;
+    }
   }
 
   // Plugin name and constructor class mapping for each transport mode
@@ -99,7 +164,7 @@ class RouteManager {
           const ServiceClass = pluginConfig.klass.split('.').reduce((obj, key) => obj[key], window);
 
           const options = { map: null };
-          if (mode === 'driving') options.policy = AMap.DrivingPolicy.LEAST_TIME;
+          if (mode === 'driving') options.policy = DRIVING_POLICIES[this.activeDrivingPolicy].value;
           if (mode === 'transit') {
             // city is REQUIRED for transit route planning
             options.city = destination.city || origin.city || '北京';
@@ -375,7 +440,7 @@ class RouteManager {
 
       // Mode-specific options
       if (mode === TRANSPORT_MODES.DRIVING) {
-        options.policy = AMap.DrivingPolicy.LEAST_TIME;
+        options.policy = DRIVING_POLICIES[this.activeDrivingPolicy].value;
       } else if (mode === TRANSPORT_MODES.TRANSIT) {
         options.city =
           (this.currentDestination && this.currentDestination.city) || result.origin.city || '北京';
@@ -677,6 +742,25 @@ class RouteManager {
       checkbox._bound = true;
       checkbox.addEventListener('change', () => {
         this.setMultiRouteMode(checkbox.checked);
+      });
+    }
+
+    // Control driving policy select visibility based on active mode
+    const policySelect = document.getElementById('drivingPolicySelect');
+    if (policySelect) {
+      if (this.activeMode === TRANSPORT_MODES.DRIVING) {
+        policySelect.classList.remove('hidden');
+        policySelect.value = this.activeDrivingPolicy;
+      } else {
+        policySelect.classList.add('hidden');
+      }
+    }
+
+    // Bind policy select change event (only once)
+    if (policySelect && !policySelect._bound) {
+      policySelect._bound = true;
+      policySelect.addEventListener('change', () => {
+        this.setDrivingPolicy(policySelect.value);
       });
     }
   }
