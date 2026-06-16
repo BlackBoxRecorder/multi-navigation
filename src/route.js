@@ -2,7 +2,7 @@ import { RateLimiter, showToast, formatDistance, formatDuration } from './utils.
 import { mapManager } from './map.js';
 import { locationManager } from './location.js';
 
-const rateLimiter = new RateLimiter(500); // 1 request per 500ms for route planning
+const rateLimiter = new RateLimiter(200); // 1 request per 200ms for route planning
 
 // Transport mode constants
 const TRANSPORT_MODES = {
@@ -34,6 +34,14 @@ const DRIVING_POLICIES = {
   LEAST_DISTANCE: { label: '距离最短', value: 2 },
   LEAST_FEE: { label: '费用最少', value: 1 },
   REAL_TRAFFIC: { label: '实时路况', value: 3 },
+};
+
+// Policy colors for multi-route cross-policy comparison
+const POLICY_COLORS = {
+  LEAST_TIME: '#ef4444',
+  LEAST_DISTANCE: '#3b82f6',
+  LEAST_FEE: '#22c55e',
+  REAL_TRAFFIC: '#f59e0b',
 };
 
 // Origin-distinct colors — each origin route gets a unique color for easy identification
@@ -146,10 +154,12 @@ class RouteManager {
 
   // Calculate route between two points for a specific transport mode
   // Returns an ARRAY of route objects (multiple alternatives from Amap)
-  async calculateRoute(origin, destination, mode = TRANSPORT_MODES.DRIVING) {
+  async calculateRoute(origin, destination, mode = TRANSPORT_MODES.DRIVING, policyKey = null, takeFirstOnly = false) {
     // Capture driving policy at call time to avoid race condition
     // (the rate limiter may delay execution, and this.activeDrivingPolicy could change in between)
-    const capturedPolicy = mode === TRANSPORT_MODES.DRIVING ? DRIVING_POLICIES[this.activeDrivingPolicy].value : null;
+    // If explicit policyKey is provided (multi-route cross-policy), use it; otherwise use activeDrivingPolicy
+    const effectivePolicyKey = policyKey || this.activeDrivingPolicy;
+    const capturedPolicy = mode === TRANSPORT_MODES.DRIVING ? DRIVING_POLICIES[effectivePolicyKey].value : null;
 
     return rateLimiter.execute(async () => {
       return new Promise((resolve, reject) => {
@@ -234,20 +244,25 @@ class RouteManager {
               } else {
                 // Driving / Walking: route.steps[].path
                 if (result.routes && result.routes.length > 0) {
-                  result.routes.forEach((route) => {
+                  const sourceRoutes = takeFirstOnly && mode === 'driving' ? result.routes.slice(0, 1) : result.routes;
+                  sourceRoutes.forEach((route) => {
                     const path = [];
                     if (route.steps) {
                       route.steps.forEach((step) => {
                         if (step.path) path.push(...step.path);
                       });
                     }
-                    routes.push({
+                    const routeObj = {
                       mode,
                       distance: route.distance,
                       duration: route.time,
                       path,
                       rawResult: mode === 'driving' ? result : null,
-                    });
+                    };
+                    if (takeFirstOnly && mode === 'driving') {
+                      routeObj.policy = policyKey || this.activeDrivingPolicy;
+                    }
+                    routes.push(routeObj);
                   });
                 } else {
                   reject(new Error('NO_DATA'));
@@ -271,7 +286,7 @@ class RouteManager {
   _isRouteRenderable(result, mode) {
     const routes = result.routes[mode];
     if (!routes || !Array.isArray(routes) || routes.length === 0) return false;
-    return routes.some((r) => Array.isArray(r.path) && r.path.length > 0);
+    return routes.some((r) => !r.empty && Array.isArray(r.path) && r.path.length > 0);
   }
 
   // Calculate routes from selected origins (or all my-locations) to a destination
@@ -318,9 +333,33 @@ class RouteManager {
 
       for (const mode of modes) {
         try {
-          const routes = await this.calculateRoute(origin, destination, mode);
-          routeResults[mode] = routes;
-          success = true;
+          if (mode === TRANSPORT_MODES.DRIVING && this.multiRouteMode) {
+            // Multi-route driving: call all 4 policies, take first route each
+            const allRoutes = [];
+            for (const policyKey of Object.keys(DRIVING_POLICIES)) {
+              try {
+                const routes = await this.calculateRoute(origin, destination, mode, policyKey, true);
+                if (routes.length > 0) {
+                  allRoutes.push(...routes);
+                } else {
+                  allRoutes.push({ mode, policy: policyKey, empty: true, distance: 0, duration: 0, path: [] });
+                }
+              } catch (policyError) {
+                if (policyError.message !== 'NO_DATA') {
+                  console.warn(`Failed to calculate ${mode} (${policyKey}) route from ${origin.name}:`, policyError);
+                }
+                // Push empty marker for this policy
+                allRoutes.push({ mode, policy: policyKey, empty: true, distance: 0, duration: 0, path: [] });
+              }
+            }
+            routeResults[mode] = allRoutes;
+            // Consider success if at least one policy returned a real route
+            if (allRoutes.some((r) => !r.empty)) success = true;
+          } else {
+            const routes = await this.calculateRoute(origin, destination, mode);
+            routeResults[mode] = routes;
+            success = true;
+          }
         } catch (error) {
           // "NO_DATA" is expected when no route exists for this mode (e.g. no transit in rural area)
           if (error.message !== 'NO_DATA') {
@@ -491,9 +530,10 @@ class RouteManager {
   }
 
   // Toggle between single-route and multi-route mode
-  setMultiRouteMode(enabled) {
+  async setMultiRouteMode(enabled) {
     if (this.multiRouteMode === enabled) return; // no change
 
+    const wasEnabled = this.multiRouteMode;
     this.multiRouteMode = enabled;
 
     // Close native detail panel without redrawing (redraw happens below)
@@ -502,6 +542,48 @@ class RouteManager {
     // Clear highlight and accordion state
     this._highlightedRoute = null;
     this._expandedGroupIndex = null;
+
+    // If enabling multi-route in driving mode with an active destination,
+    // recalculate with cross-policy to get all 4 policy results
+    if (enabled && !wasEnabled && this.currentDestination && this.activeMode === TRANSPORT_MODES.DRIVING) {
+      showToast('正在计算四种策略路线...', 'info');
+
+      // Recalculate with cross-policy (multiRouteMode is now true)
+      const results = await this.calculateRoutesToDestination(this.currentDestination, this._activeOriginIndices);
+      if (results.length > 0) {
+        this.renderResultsPanel(this.currentDestination, results, this.activeMode);
+        // Restore multiRouteMode (renderResultsPanel resets it to false)
+        this.multiRouteMode = true;
+        // Update checkbox state
+        const checkbox = document.getElementById('multiRouteToggle');
+        if (checkbox) checkbox.checked = true;
+        // Re-render mode switch bar (hides policy select)
+        this.renderModeSwitchBar(this.currentDestination, this.currentResults);
+        // Re-render list with new data
+        this.renderRouteList(this.currentResults, this.activeMode);
+        // Clear and re-render map lines
+        this.currentRouteLines.forEach((line) => mapManager.map.remove(line));
+        this.currentRouteLines = [];
+        this._renderOverviewRoutes(this.activeMode);
+      }
+      return;
+    }
+
+    // If disabling multi-route in driving mode with an active destination,
+    // recalculate with single-policy to restore normal single-route data
+    if (!enabled && wasEnabled && this.currentDestination && this.activeMode === TRANSPORT_MODES.DRIVING) {
+      showToast('正在恢复单策略路线...', 'info');
+
+      const results = await this.calculateRoutesToDestination(this.currentDestination, this._activeOriginIndices);
+      if (results.length > 0) {
+        this.renderResultsPanel(this.currentDestination, results, this.activeMode);
+        // Clear and re-render map lines
+        this.currentRouteLines.forEach((line) => mapManager.map.remove(line));
+        this.currentRouteLines = [];
+        this._renderOverviewRoutes(this.activeMode);
+      }
+      return;
+    }
 
     // Clear and re-render map lines
     this.currentRouteLines.forEach((line) => mapManager.map.remove(line));
@@ -531,11 +613,18 @@ class RouteManager {
       if (!routes || !Array.isArray(routes) || routes.length === 0) return;
 
       let hasAnyRoute = false;
+      const isDriving = mode === TRANSPORT_MODES.DRIVING;
 
       routes.forEach((route, subRouteIdx) => {
+        // Skip empty marker objects from failed policy calls
+        if (route.empty) return;
         if (route.path && route.path.length > 0) {
           hasAnyRoute = true;
-          const style = SUB_ROUTE_STYLES[subRouteIdx % SUB_ROUTE_STYLES.length];
+          // Use policy colors for driving multi-route, SUB_ROUTE_STYLES otherwise
+          const color =
+            isDriving && route.policy
+              ? POLICY_COLORS[route.policy] || SUB_ROUTE_STYLES[subRouteIdx % SUB_ROUTE_STYLES.length].color
+              : SUB_ROUTE_STYLES[subRouteIdx % SUB_ROUTE_STYLES.length].color;
 
           // Check if this specific sub-route is highlighted
           const isHighlighted =
@@ -543,11 +632,10 @@ class RouteManager {
 
           const polyline = new AMap.Polyline({
             path: route.path,
-            strokeColor: style.color,
+            strokeColor: color,
             strokeWeight: isHighlighted ? 8 : 4,
             strokeOpacity: isHighlighted ? 1.0 : 0.7,
-            strokeStyle: style.dashPattern ? 'dashed' : 'solid',
-            strokeDasharray: style.dashPattern || undefined,
+            strokeStyle: 'solid',
             showDir: true,
             zIndex: isHighlighted ? 60 : 50,
           });
@@ -760,10 +848,10 @@ class RouteManager {
       });
     }
 
-    // Control driving policy select visibility based on active mode
+    // Control driving policy select visibility based on active mode and multi-route
     const policySelect = document.getElementById('drivingPolicySelect');
     if (policySelect) {
-      if (this.activeMode === TRANSPORT_MODES.DRIVING) {
+      if (this.activeMode === TRANSPORT_MODES.DRIVING && !this.multiRouteMode) {
         policySelect.classList.remove('hidden');
         policySelect.value = this.activeDrivingPolicy;
       } else {
@@ -793,13 +881,20 @@ class RouteManager {
     }
 
     const isMulti = this.multiRouteMode;
+    const isDriving = mode === TRANSPORT_MODES.DRIVING;
+
+    // Effective route count label for group headers
+    const getRouteCountLabel = (routes) => {
+      if (isMulti && isDriving) return '4策略';
+      const count = routes.filter((r) => !r.empty).length;
+      return `${count}条`;
+    };
 
     container.innerHTML = validResults
       .map((result) => {
         const originalIndex = results.indexOf(result);
         const routes = result.routes[mode];
         const activeIdx = (result.activeRouteIndex && result.activeRouteIndex[mode]) || 0;
-        const routeCount = routes.length;
 
         // In multi-route mode, body visibility is controlled by _expandedGroupIndex
         const isExpanded = !isMulti || this._expandedGroupIndex === originalIndex;
@@ -809,12 +904,41 @@ class RouteManager {
         // Sub-route cards: color dot style depends on mode
         const routesHtml = routes
           .map((route, routeIdx) => {
+            // Empty marker route from failed policy call
+            if (route.empty) {
+              const policyLabel = DRIVING_POLICIES[route.policy] ? DRIVING_POLICIES[route.policy].label : '未知策略';
+              return `
+          <div class="route-sub-card p-2.5 ml-3 border-l-2 rounded-r border-gray-200 bg-gray-50 opacity-60">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-medium text-gray-400">${policyLabel}</span>
+              <span class="text-xs text-gray-300">→ 目的地</span>
+            </div>
+            <div class="flex items-center mt-1 text-xs text-gray-400">
+              <span>该策略无可用路线</span>
+            </div>
+          </div>
+        `;
+            }
+
             const isActive = !isMulti && routeIdx === activeIdx;
             // In multi-route mode, check if this sub-route is highlighted
             const isHighlighted =
               isMulti && this._highlightedRoute && this._highlightedRoute.groupIndex === originalIndex && this._highlightedRoute.subRouteIdx === routeIdx;
-            // Color for dot: ORIGIN_COLORS in single mode, SUB_ROUTE_STYLES in multi mode
-            const dotColor = isMulti ? SUB_ROUTE_STYLES[routeIdx % SUB_ROUTE_STYLES.length].color : ORIGIN_COLORS[originalIndex % ORIGIN_COLORS.length];
+            // Color for dot: driving multi-route uses policy colors, otherwise SUB_ROUTE_STYLES/ORIGIN_COLORS
+            const dotColor =
+              isMulti && isDriving && route.policy
+                ? POLICY_COLORS[route.policy] || SUB_ROUTE_STYLES[routeIdx % SUB_ROUTE_STYLES.length].color
+                : isMulti
+                  ? SUB_ROUTE_STYLES[routeIdx % SUB_ROUTE_STYLES.length].color
+                  : ORIGIN_COLORS[originalIndex % ORIGIN_COLORS.length];
+
+            // Card label: driving multi-route uses policy name, otherwise "方案N"
+            const cardLabel =
+              isMulti && isDriving && route.policy
+                ? DRIVING_POLICIES[route.policy]
+                  ? DRIVING_POLICIES[route.policy].label
+                  : `方案${routeIdx + 1}`
+                : `方案${routeIdx + 1}`;
 
             const highlightClass = isHighlighted
               ? 'border-blue-400 bg-blue-50 ring-1 ring-blue-300'
@@ -827,7 +951,7 @@ class RouteManager {
             data-route-index="${originalIndex}"
             data-sub-route="${routeIdx}">
             <div class="flex items-center justify-between">
-              <span class="text-xs font-medium ${isActive || isHighlighted ? 'text-blue-700' : 'text-gray-700'}">方案${routeIdx + 1}</span>
+              <span class="text-xs font-medium ${isActive || isHighlighted ? 'text-blue-700' : 'text-gray-700'}">${cardLabel}</span>
               <span class="text-xs text-gray-400">→ 目的地</span>
             </div>
             <div class="flex items-center mt-1 text-xs text-gray-600 space-x-3">
@@ -842,13 +966,14 @@ class RouteManager {
           })
           .join('');
 
-        // Detail button: only in single-route mode, placed in group header
-        const detailBtnHtml = !isMulti
-          ? `<button class="route-group-detail-btn text-xs px-2 py-0.5 rounded border border-gray-300 bg-white hover:border-blue-400 hover:text-blue-600 text-gray-500 transition-colors flex-shrink-0 ml-2"
+        // Detail button: only in single-route mode (or multi-route non-driving), placed in group header
+        const detailBtnHtml =
+          !isMulti || (isMulti && !isDriving)
+            ? `<button class="route-group-detail-btn text-xs px-2 py-0.5 rounded border border-gray-300 bg-white hover:border-blue-400 hover:text-blue-600 text-gray-500 transition-colors flex-shrink-0 ml-2"
                   data-group-index="${originalIndex}">
                 详情
               </button>`
-          : '';
+            : '';
 
         return `
         <div class="route-group border border-gray-200 rounded-lg overflow-hidden mb-2">
@@ -859,7 +984,7 @@ class RouteManager {
               <span class="font-medium text-sm text-gray-800 truncate">${result.origin.name}</span>
             </div>
             <div class="flex items-center">
-              <span class="text-xs text-gray-400 flex-shrink-0">${MODE_NAMES[mode]} ${routeCount}条</span>
+              <span class="text-xs text-gray-400 flex-shrink-0">${MODE_NAMES[mode]} ${getRouteCountLabel(routes)}</span>
 ${detailBtnHtml}
             </div>
           </div>
