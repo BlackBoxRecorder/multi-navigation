@@ -112,7 +112,7 @@ class RouteManager {
 
   // Set origin (clears destination, routes; sets routeDirection)
   setOrigin(origin) {
-    this.hideRouteDetailPanel();
+    this._closeRoutePanelOnly();
     this.currentDestination = null;
     this.currentResults = [];
     this._activeOriginIds = [];
@@ -129,7 +129,7 @@ class RouteManager {
 
   // Set destination (clears origin, routes; sets routeDirection)
   setDestination(destination) {
-    this.hideRouteDetailPanel();
+    this._closeRoutePanelOnly();
     this.currentOrigin = null;
     this.currentResults = [];
     this._activeDestinationIds = [];
@@ -534,7 +534,7 @@ class RouteManager {
     this.activeMode = mode;
 
     // Close native detail panel when switching mode
-    this.hideRouteDetailPanel();
+    this._closeRoutePanelOnly();
 
     // Clear old route lines from map
     this.currentRouteLines.forEach((line) => mapManager.map.remove(line));
@@ -879,7 +879,7 @@ class RouteManager {
 
   // Clear all route results: state, map lines, destination/origin marker, UI
   clearRoutes() {
-    this.hideRouteDetailPanel();
+    this._closeRoutePanelOnly();
     this.currentResults = [];
     this.currentDestination = null;
     this.currentOrigin = null;
@@ -920,7 +920,7 @@ class RouteManager {
     if (!container) return;
 
     // Close native route detail panel when new results come in
-    this.hideRouteDetailPanel();
+    this._closeRoutePanelOnly();
 
     this.activeMode = activeMode || TRANSPORT_MODES.DRIVING;
     this.currentResults = results;

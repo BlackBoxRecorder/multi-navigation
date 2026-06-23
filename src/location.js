@@ -41,36 +41,6 @@ class LocationManager {
     }
   }
 
-  // Search for a location using Amap POI API
-  searchLocation(name) {
-    return new Promise((resolve, reject) => {
-      AMap.plugin('AMap.PlaceSearch', () => {
-        const placeSearch = new AMap.PlaceSearch({
-          pageSize: 1,
-          pageIndex: 1,
-          city: '全国',
-          citylimit: false,
-        });
-
-        placeSearch.search(name, (status, result) => {
-          if (status === 'complete' && result.poiList && result.poiList.pois.length > 0) {
-            const poi = result.poiList.pois[0];
-            resolve({
-              name: poi.name,
-              address: poi.address,
-              latitude: poi.location.lat,
-              longitude: poi.location.lng,
-              city: poi.cityname,
-              district: poi.adname,
-            });
-          } else {
-            reject(new Error(`找不到地点: ${name}`));
-          }
-        });
-      });
-    });
-  }
-
   // Add a single location to the flat list
   addLocation(location) {
     if (this.locations.length >= MAX_LOCATIONS) {
