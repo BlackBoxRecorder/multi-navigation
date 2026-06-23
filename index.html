@@ -212,9 +212,9 @@
         </button>
       </h2>
 
-      <!-- Selected Destination Info -->
-      <div id="destinationDisplay" class="mb-4 p-3 bg-red-50 rounded-lg border border-red-200 hidden">
-        <h3 class="font-semibold text-red-800 mb-1">📍 目的地</h3>
+      <!-- Selected Destination/Origin Info -->
+      <div id="destinationDisplay" class="mb-4 p-3 rounded-lg border hidden">
+        <h3 id="destLabel" class="font-semibold mb-1">📍 目的地</h3>
         <p id="destName" class="text-sm font-medium text-gray-800"></p>
         <p id="destAddr" class="text-xs text-gray-500 mt-1"></p>
       </div>
@@ -239,7 +239,7 @@
 
       <!-- Path Results -->
       <div id="routeResultsList" class="space-y-2">
-        <p class="text-sm text-gray-500 italic">点击地图 POI 并设为目的地以计算路线</p>
+                <p class="text-sm text-gray-500 italic">点击地图 POI 并设为起点/终点以计算路线</p>
       </div>
     </div>
   </div>
@@ -277,7 +277,7 @@
           </div>
           <div>
             <h4 class="font-semibold text-gray-800 mb-1">🚗 多模式路线规划</h4>
-            <p class="text-sm text-gray-600">勾选出发地，点击目的地 POI，自动计算驾车/公交/步行/骑行四种路线，支持切换交通模式查看具体方案。</p>
+            <p class="text-sm text-gray-600">勾选地点，在地图上右键 POI 标记选择「设为终点」（多起点→单终点）或「设为起点」（单起点→多终点），自动计算驾车/公交/步行/骑行四种路线。</p>
           </div>
           <div>
             <h4 class="font-semibold text-gray-800 mb-1">⭐ 多点最优路径</h4>
@@ -297,15 +297,15 @@
           <div class="flex items-start gap-2">
             <span class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-blue-100 text-blue-600 text-xs font-bold mt-0.5">2</span>
             <div>
-              <p class="text-sm font-medium text-gray-800">选择出发地</p>
-              <p class="text-xs text-gray-500">在左侧「我的地点」列表中，勾选复选框作为出发地（至少勾选 1 个，最多 5 个）。</p>
+              <p class="text-sm font-medium text-gray-800">勾选地点</p>
+              <p class="text-xs text-gray-500">在左侧「我的地点」列表中，勾选复选框（至少勾选 1 个，最多 5 个）。作为正向模式的出发地或反向模式的目的地。</p>
             </div>
           </div>
           <div class="flex items-start gap-2">
             <span class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full bg-blue-100 text-blue-600 text-xs font-bold mt-0.5">3</span>
             <div>
-              <p class="text-sm font-medium text-gray-800">设置目的地</p>
-              <p class="text-xs text-gray-500">在地图上点击任意 POI 标记，弹出信息窗，点击「设为目的地」按钮。</p>
+              <p class="text-sm font-medium text-gray-800">设置起点或终点</p>
+              <p class="text-xs text-gray-500">在地图上右键 POI 标记弹出信息窗，点击「设为终点」规划从勾选地点到该点的路线，或点击「设为起点」规划从该点到各勾选地点的路线。</p>
             </div>
           </div>
           <div class="flex items-start gap-2">

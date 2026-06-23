@@ -11,6 +11,8 @@ class MapManager {
     this.routeLines = [];
     this.destinationMarker = null;
     this.destinationTooltip = null;
+    this.originMarker = null;
+    this.originTooltip = null;
     this.poiInfoWindow = null;
   }
 
@@ -224,14 +226,17 @@ class MapManager {
       <button class="poi-info-close-btn close-poi-btn" title="关闭">✕</button>
       <h3 class="font-semibold text-sm text-gray-800 mb-1 pr-5">${poiData.name}</h3>
       <p class="text-xs text-gray-500 mb-3 truncate max-w-[200px]">${poiData.address || '地址不详'}</p>
-      <div class="flex space-x-2">
-        <button class="add-location-btn flex-1 text-xs px-3 py-1.5 rounded font-medium transition-colors
+      <div class="flex space-x-1.5">
+        <button class="add-location-btn flex-1 text-xs px-2 py-1.5 rounded font-medium transition-colors
           ${isCollected ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600 text-white'}"
           ${isCollected ? 'disabled' : ''}>
-          ${isCollected ? '已添加 ✓' : '添加到我的地点'}
+          收藏
         </button>
-        <button class="set-destination-btn flex-1 text-xs px-3 py-1.5 rounded font-medium bg-green-500 hover:bg-green-600 text-white transition-colors">
-          设为目的地
+        <button class="set-origin-btn flex-1 text-xs px-2 py-1.5 rounded font-medium bg-orange-500 hover:bg-orange-600 text-white transition-colors">
+          设为起点
+        </button>
+        <button class="set-destination-btn flex-1 text-xs px-2 py-1.5 rounded font-medium bg-green-500 hover:bg-green-600 text-white transition-colors">
+          设为终点
         </button>
       </div>
     `;
@@ -280,6 +285,20 @@ class MapManager {
           this.closePoiInfoWindow();
         }
       }
+    });
+
+    infoDiv.querySelector('.set-origin-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (locationManager.getAllLocations().length === 0) {
+        showToast('请先添加收藏地点', 'warning');
+        return;
+      }
+      window.dispatchEvent(
+        new CustomEvent('originSet', {
+          detail: { origin: poiData },
+        }),
+      );
+      this.closePoiInfoWindow();
     });
 
     infoDiv.querySelector('.set-destination-btn').addEventListener('click', (e) => {
@@ -382,6 +401,9 @@ class MapManager {
   }
 
   addDestinationMarker(location) {
+    // Clear origin marker when setting destination (mutual exclusion)
+    this.clearOriginMarker();
+
     // Remove old destination marker and tooltip if exists
     if (this.destinationMarker) {
       this.map.remove(this.destinationMarker);
@@ -507,6 +529,110 @@ class MapManager {
       this.map.off('resize', this.destinationTooltip.moveHandler);
       this.destinationTooltip.el.remove();
       this.destinationTooltip = null;
+    }
+  }
+
+  // --- Origin Marker Methods ---
+
+  addOriginMarker(location) {
+    // Clear destination marker when setting origin (mutual exclusion)
+    this.clearDestinationMarker();
+
+    // Remove old origin marker and tooltip if exists
+    if (this.originMarker) {
+      this.map.remove(this.originMarker);
+    }
+    if (this.originTooltip) {
+      this.map.off('move', this.originTooltip.moveHandler);
+      this.map.off('zoom', this.originTooltip.moveHandler);
+      this.map.off('resize', this.originTooltip.moveHandler);
+      this.originTooltip.el.remove();
+      this.originTooltip = null;
+    }
+
+    const position = [location.longitude, location.latitude];
+
+    this.originMarker = new AMap.Marker({
+      position: position,
+      title: '起点: ' + location.name,
+      content:
+        '<div style="width:28px;height:28px;">' +
+        `<svg t="1781248311650" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="24161" width="28" height="28"><path d="M516.937143 2.194286C301.129143 3.145143 126.317714 179.529143 127.268571 395.337143c0.877714 202.532571 323.401143 567.552 360.155429 608.475428a45.421714 45.421714 0 0 0 67.949714-0.292571c36.388571-41.252571 355.657143-409.124571 354.742857-611.657143C909.165714 176.054857 732.745143 1.243429 516.937143 2.194286z m2.523428 563.273143a158.72 158.72 0 0 1-159.268571-157.842286 158.72 158.72 0 0 1 157.842286-159.232 158.72 158.72 0 0 1 159.268571 157.805714 158.72 158.72 0 0 1-157.842286 159.268572z" fill="#22c55e" p-id="24162"></path></svg>` +
+        '</div>',
+      anchor: 'bottom-center',
+      zIndex: 200,
+    });
+
+    // DOM tooltip
+    const container = this.map.getContainer();
+    const tooltip = document.createElement('div');
+    tooltip.style.cssText = 'position:absolute;z-index:1000;pointer-events:none;display:none;width:0;height:90px;';
+    tooltip.innerHTML = `<div class="origin-tooltip-inner" style="pointer-events:auto;position:relative;display:flex;flex-direction:column;align-items:center;transform:translateX(-50%);">
+      <div style="background:white;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.15);padding:8px 12px;font-size:13px;line-height:1.4;white-space:nowrap;">
+        <div style="font-weight:600;color:#16a34a;">🚩 起点</div>
+        <div style="font-weight:500;margin-top:2px;">${location.name}</div>
+        <div style="color:#4b5563;font-size:12px;margin-top:2px;">${location.address || '地址不详'}</div>
+      </div>
+      <div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:8px solid white;margin-top:-1px;"></div>
+      <div style="width:30px;flex:1;background:transparent;"></div>
+    </div>`;
+    container.appendChild(tooltip);
+
+    const updateTooltipPos = () => {
+      const pixel = this.map.lngLatToContainer(position);
+      tooltip.style.left = pixel.x + 'px';
+      tooltip.style.bottom = container.clientHeight - pixel.y + 18 + 'px';
+    };
+
+    const moveHandler = () => updateTooltipPos();
+    this.map.on('move', moveHandler);
+    this.map.on('zoom', moveHandler);
+    this.map.on('resize', moveHandler);
+
+    let closeTimer = null;
+    const show = () => {
+      if (closeTimer) {
+        clearTimeout(closeTimer);
+        closeTimer = null;
+      }
+      updateTooltipPos();
+      tooltip.style.display = 'block';
+    };
+    const hide = () => {
+      closeTimer = setTimeout(() => {
+        tooltip.style.display = 'none';
+      }, 80);
+    };
+
+    const tooltipInner = tooltip.querySelector('.origin-tooltip-inner');
+    this.originMarker.on('mouseover', show);
+    this.originMarker.on('mouseout', hide);
+    tooltipInner.addEventListener('mouseenter', () => {
+      if (closeTimer) {
+        clearTimeout(closeTimer);
+        closeTimer = null;
+      }
+    });
+    tooltipInner.addEventListener('mouseleave', hide);
+
+    this.map.add(this.originMarker);
+    this.originTooltip = { el: tooltip, moveHandler };
+
+    // Fit view to include origin
+    this.map.setCenter(position);
+  }
+
+  clearOriginMarker() {
+    if (this.originMarker) {
+      this.map.remove(this.originMarker);
+      this.originMarker = null;
+    }
+    if (this.originTooltip) {
+      this.map.off('move', this.originTooltip.moveHandler);
+      this.map.off('zoom', this.originTooltip.moveHandler);
+      this.map.off('resize', this.originTooltip.moveHandler);
+      this.originTooltip.el.remove();
+      this.originTooltip = null;
     }
   }
 

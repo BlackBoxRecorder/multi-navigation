@@ -88,9 +88,19 @@ async function initApp() {
       uiManager._adjustIndicesAfterRemove(index);
       // Adjust route origin indices
       routeManager._adjustOriginIndicesAfterRemove(index);
+      routeManager._adjustDestinationIndicesAfterRemove(index);
 
-      // If there's still a destination set, recalculate routes with remaining origins
-      if (routeManager.currentDestination && routeManager._activeOriginIndices.length > 0) {
+      // If there's still an active route, recalculate with remaining indices
+      if (routeManager.routeDirection === 'fromOrigin' && routeManager.currentOrigin && routeManager._activeDestinationIndices.length > 0) {
+        routeManager.calculateRoutesFromOrigin(routeManager.currentOrigin, routeManager._activeDestinationIndices).then((results) => {
+          if (results.length > 0) {
+            routeManager.renderResultsPanel(routeManager.currentOrigin, results, routeManager.activeMode);
+            routeManager.switchTransportMode(routeManager.activeMode);
+          } else {
+            routeManager.clearRoutes();
+          }
+        });
+      } else if (routeManager.currentDestination && routeManager._activeOriginIndices.length > 0) {
         routeManager.calculateRoutesToDestination(routeManager.currentDestination, routeManager._activeOriginIndices).then((results) => {
           if (results.length > 0) {
             routeManager.renderResultsPanel(routeManager.currentDestination, results, routeManager.activeMode);
@@ -99,8 +109,11 @@ async function initApp() {
             routeManager.clearRoutes();
           }
         });
-      } else if (routeManager._activeOriginIndices.length === 0 && routeManager.currentDestination) {
-        // No remaining origins → clear routes
+      } else if (
+        (routeManager.routeDirection === 'fromOrigin' && routeManager._activeDestinationIndices.length === 0) ||
+        (routeManager.routeDirection === 'toDestination' && routeManager._activeOriginIndices.length === 0)
+      ) {
+        // No remaining active indices → clear routes
         routeManager.clearRoutes();
       }
 
@@ -125,22 +138,64 @@ async function initApp() {
       // Skip if same destination
       if (
         routeManager.currentDestination &&
+        routeManager.routeDirection === 'toDestination' &&
         Math.abs(routeManager.currentDestination.latitude - destination.latitude) < 0.0001 &&
         Math.abs(routeManager.currentDestination.longitude - destination.longitude) < 0.0001
       ) {
         return;
       }
 
-      // Clear old routes on map
+      // Clear old routes on map + set destination (mutual exclusion)
       mapManager.clearRouteLines();
+      routeManager.setDestination(destination);
 
-      // Add destination marker (only after validation passes)
+      // Add destination marker (red)
       mapManager.addDestinationMarker(destination);
 
       // Calculate routes
       const results = await routeManager.calculateRoutesToDestination(destination, selectedIndices);
       if (results.length > 0) {
         routeManager.renderResultsPanel(destination, results, routeManager.activeMode);
+        routeManager.switchTransportMode(routeManager.activeMode);
+      }
+    });
+
+    // Listen for origin set events
+    window.addEventListener('originSet', async (e) => {
+      const { origin } = e.detail;
+
+      // Get selected (checked) location indices
+      const selectedIndices = uiManager.getSelectedLocationIndices();
+      if (selectedIndices.length === 0) {
+        showToast('请至少选择一个地点', 'warning');
+        return;
+      }
+      if (selectedIndices.length > 5) {
+        showToast('地点太多了，最多 5 个', 'warning');
+        return;
+      }
+
+      // Skip if same origin
+      if (
+        routeManager.currentOrigin &&
+        routeManager.routeDirection === 'fromOrigin' &&
+        Math.abs(routeManager.currentOrigin.latitude - origin.latitude) < 0.0001 &&
+        Math.abs(routeManager.currentOrigin.longitude - origin.longitude) < 0.0001
+      ) {
+        return;
+      }
+
+      // Clear old routes on map + set origin (mutual exclusion)
+      mapManager.clearRouteLines();
+      routeManager.setOrigin(origin);
+
+      // Add origin marker (green)
+      mapManager.addOriginMarker(origin);
+
+      // Calculate routes
+      const results = await routeManager.calculateRoutesFromOrigin(origin, selectedIndices);
+      if (results.length > 0) {
+        routeManager.renderResultsPanel(origin, results, routeManager.activeMode);
         routeManager.switchTransportMode(routeManager.activeMode);
       }
     });

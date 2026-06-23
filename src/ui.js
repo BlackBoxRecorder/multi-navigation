@@ -242,7 +242,7 @@ class UIManager {
     }
     if (this.routeResultsList) {
       this.routeResultsList.innerHTML = `
-        <p class="text-sm text-gray-500 italic">右键点击地图上蓝色标记的地点并设为目的地以计算路线</p>
+                <p class="text-sm text-gray-500 italic">右键点击地图上蓝色标记的地点并设为起点/终点以计算路线</p>
       `;
     }
     const modeBtns = document.getElementById('modeBtns');

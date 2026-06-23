@@ -65,9 +65,11 @@ const SUB_ROUTE_STYLES = [
 
 class RouteManager {
   constructor() {
-    this.currentResults = []; // [{ origin, routes: { driving, transit, walking, bicycling } }]
+    this.currentResults = []; // [{ origin/destination, routes: { driving, transit, walking, bicycling } }]
     this.activeMode = TRANSPORT_MODES.DRIVING;
     this.currentDestination = null;
+    this.currentOrigin = null; // 起点位置对象，与 currentDestination 互斥
+    this.routeDirection = 'toDestination'; // 'toDestination' | 'fromOrigin'
     this.currentRouteLines = []; // Track rendered lines for highlighting
     this._routeDetailService = null; // Native AMap route service instance
     this._routeDetailResultIndex = null; // Which origin's detail is showing
@@ -75,7 +77,8 @@ class RouteManager {
     this._highlightedRoute = null; // { groupIndex, subRouteIdx } in multi-route mode
     this._expandedGroupIndex = null; // accordion: only one group expanded at a time in multi-route mode
     this.activeDrivingPolicy = this._loadDrivingPolicy();
-    this._activeOriginIndices = []; // origin indices used for current route calculation
+    this._activeOriginIndices = []; // origin indices used for current route calculation (toDestination)
+    this._activeDestinationIndices = []; // destination indices used for current route calculation (fromOrigin)
   }
 
   // Load driving policy from localStorage, default to LEAST_TIME
@@ -101,10 +104,44 @@ class RouteManager {
       void _;
     }
 
-    // If currently in driving mode with a destination, recalculate with new policy
-    if (this.activeMode === TRANSPORT_MODES.DRIVING && this.currentDestination) {
+    // If currently in driving mode with active routes, recalculate with new policy
+    if (this.activeMode === TRANSPORT_MODES.DRIVING && (this.currentDestination || this.currentOrigin)) {
       this._recalculateWithNewPolicy();
     }
+  }
+
+  // Set origin (clears destination, routes; sets routeDirection)
+  setOrigin(origin) {
+    this.hideRouteDetailPanel();
+    this.currentDestination = null;
+    this.currentResults = [];
+    this._activeOriginIndices = [];
+    this.currentOrigin = origin;
+    this.routeDirection = 'fromOrigin';
+    this.currentRouteLines.forEach((line) => mapManager.map.remove(line));
+    this.currentRouteLines = [];
+    this.multiRouteMode = false;
+    this._highlightedRoute = null;
+    this._expandedGroupIndex = null;
+    const checkbox = document.getElementById('multiRouteToggle');
+    if (checkbox) checkbox.checked = false;
+  }
+
+  // Set destination (clears origin, routes; sets routeDirection)
+  setDestination(destination) {
+    this.hideRouteDetailPanel();
+    this.currentOrigin = null;
+    this.currentResults = [];
+    this._activeDestinationIndices = [];
+    this.currentDestination = destination;
+    this.routeDirection = 'toDestination';
+    this.currentRouteLines.forEach((line) => mapManager.map.remove(line));
+    this.currentRouteLines = [];
+    this.multiRouteMode = false;
+    this._highlightedRoute = null;
+    this._expandedGroupIndex = null;
+    const checkbox = document.getElementById('multiRouteToggle');
+    if (checkbox) checkbox.checked = false;
   }
 
   // Clear driving routes and recalculate with current policy
@@ -119,9 +156,14 @@ class RouteManager {
     if (select) select.disabled = true;
 
     try {
-      const results = await this.calculateRoutesToDestination(this.currentDestination, this._activeOriginIndices);
+      let results;
+      if (this.routeDirection === 'fromOrigin' && this.currentOrigin) {
+        results = await this.calculateRoutesFromOrigin(this.currentOrigin, this._activeDestinationIndices);
+      } else {
+        results = await this.calculateRoutesToDestination(this.currentDestination, this._activeOriginIndices);
+      }
       if (results.length > 0) {
-        this.renderResultsPanel(this.currentDestination, results, this.activeMode);
+        this.renderResultsPanel(this.routeDirection === 'fromOrigin' ? this.currentOrigin : this.currentDestination, results, this.activeMode);
         this.switchTransportMode(this.activeMode);
       } else {
         showToast('该策略下无可用路线', 'warning');
@@ -389,6 +431,102 @@ class RouteManager {
     return results;
   }
 
+  // Calculate routes from a single origin to multiple selected destinations
+  async calculateRoutesFromOrigin(origin, destIndices = null) {
+    const allLocations = locationManager.getAllLocations();
+
+    if (allLocations.length === 0) {
+      showToast('请先添加收藏地点', 'warning');
+      return [];
+    }
+
+    let destinations;
+    if (destIndices && destIndices.length > 0) {
+      destinations = destIndices.map((i) => allLocations[i]).filter(Boolean);
+      this._activeDestinationIndices = [...destIndices];
+    } else {
+      destinations = allLocations;
+      this._activeDestinationIndices = allLocations.map((_, i) => i);
+    }
+
+    if (destinations.length === 0) {
+      showToast('请至少选择一个地点', 'warning');
+      return [];
+    }
+
+    // Filter out destinations that match the origin
+    destinations = destinations.filter((loc) => Math.abs(loc.latitude - origin.latitude) > 0.0001 || Math.abs(loc.longitude - origin.longitude) > 0.0001);
+
+    if (destinations.length === 0) {
+      showToast('起点与所有收藏地点重合，无需计算', 'warning');
+      return [];
+    }
+
+    showToast(`正在计算 ${destinations.length} 条路线...`, 'info');
+
+    const modes = Object.values(TRANSPORT_MODES);
+
+    const results = [];
+
+    for (const dest of destinations) {
+      const routeResults = {};
+      let success = false;
+
+      for (const mode of modes) {
+        try {
+          if (mode === TRANSPORT_MODES.DRIVING && this.multiRouteMode) {
+            // Multi-route driving: call all 4 policies, take first route each
+            const allRoutes = [];
+            for (const policyKey of Object.keys(DRIVING_POLICIES)) {
+              try {
+                const routes = await this.calculateRoute(origin, dest, mode, policyKey, true);
+                if (routes.length > 0) {
+                  allRoutes.push(...routes);
+                } else {
+                  allRoutes.push({ mode, policy: policyKey, empty: true, distance: 0, duration: 0, path: [] });
+                }
+              } catch (policyError) {
+                if (policyError.message !== 'NO_DATA') {
+                  console.warn(`Failed to calculate ${mode} (${policyKey}) route from ${origin.name}:`, policyError);
+                }
+                allRoutes.push({ mode, policy: policyKey, empty: true, distance: 0, duration: 0, path: [] });
+              }
+            }
+            routeResults[mode] = allRoutes;
+            if (allRoutes.some((r) => !r.empty)) success = true;
+          } else {
+            const routes = await this.calculateRoute(origin, dest, mode);
+            routeResults[mode] = routes;
+            success = true;
+          }
+        } catch (error) {
+          if (error.message !== 'NO_DATA') {
+            console.warn(`Failed to calculate ${mode} route from ${origin.name} to ${dest.name}:`, error);
+          }
+          routeResults[mode] = [];
+        }
+      }
+
+      results.push({
+        destination: dest,
+        routes: routeResults,
+        activeRouteIndex: {
+          [TRANSPORT_MODES.DRIVING]: 0,
+          [TRANSPORT_MODES.TRANSIT]: 0,
+          [TRANSPORT_MODES.WALKING]: 0,
+          [TRANSPORT_MODES.BICYCLING]: 0,
+        },
+        hasError: !success,
+      });
+    }
+
+    this.currentResults = results;
+    this.currentOrigin = origin;
+    this.activeMode = TRANSPORT_MODES.DRIVING;
+
+    return results;
+  }
+
   // Switch transport mode and render all routes for that mode
   switchTransportMode(mode) {
     this.activeMode = mode;
@@ -455,7 +593,10 @@ class RouteManager {
 
     // Update title
     const title = document.getElementById('routeDetailPanelTitle');
-    if (title) title.textContent = `从 ${result.origin.name} (${MODE_NAMES[mode]})`;
+    if (title) {
+      const name = this.routeDirection === 'fromOrigin' ? result.destination.name : result.origin.name;
+      title.textContent = `从 ${name} (${MODE_NAMES[mode]})`;
+    }
 
     this._routeDetailResultIndex = resultIndex;
 
@@ -476,7 +617,8 @@ class RouteManager {
       if (mode === TRANSPORT_MODES.DRIVING) {
         options.policy = capturedPolicy;
       } else if (mode === TRANSPORT_MODES.TRANSIT) {
-        options.city = (this.currentDestination && this.currentDestination.city) || result.origin.city || '北京';
+        const destForCity = this.routeDirection === 'fromOrigin' ? result.destination : this.currentDestination;
+        options.city = (destForCity && destForCity.city) || (this.routeDirection === 'fromOrigin' ? this.currentOrigin.city : result.origin.city) || '北京';
         options.policy = AMap.TransferPolicy.LEAST_TIME;
       }
       // Walking and Riding use default options
@@ -484,8 +626,12 @@ class RouteManager {
       const service = new ServiceClass(options);
       this._routeDetailService = service;
 
-      const originPoint = [result.origin.longitude, result.origin.latitude];
-      const destPoint = [this.currentDestination.longitude, this.currentDestination.latitude];
+      const originPoint =
+        this.routeDirection === 'fromOrigin' ? [this.currentOrigin.longitude, this.currentOrigin.latitude] : [result.origin.longitude, result.origin.latitude];
+      const destPoint =
+        this.routeDirection === 'fromOrigin'
+          ? [result.destination.longitude, result.destination.latitude]
+          : [this.currentDestination.longitude, this.currentDestination.latitude];
 
       service.search(originPoint, destPoint, (status) => {
         if (status === 'complete') {
@@ -543,22 +689,31 @@ class RouteManager {
     this._highlightedRoute = null;
     this._expandedGroupIndex = null;
 
-    // If enabling multi-route in driving mode with an active destination,
+    // Determine if we have an active route context
+    const hasActiveRoute = this.routeDirection === 'fromOrigin' ? !!this.currentOrigin : !!this.currentDestination;
+
+    // If enabling multi-route in driving mode with active routes,
     // recalculate with cross-policy to get all 4 policy results
-    if (enabled && !wasEnabled && this.currentDestination && this.activeMode === TRANSPORT_MODES.DRIVING) {
+    if (enabled && !wasEnabled && hasActiveRoute && this.activeMode === TRANSPORT_MODES.DRIVING) {
       showToast('正在计算四种策略路线...', 'info');
 
       // Recalculate with cross-policy (multiRouteMode is now true)
-      const results = await this.calculateRoutesToDestination(this.currentDestination, this._activeOriginIndices);
+      let results;
+      if (this.routeDirection === 'fromOrigin') {
+        results = await this.calculateRoutesFromOrigin(this.currentOrigin, this._activeDestinationIndices);
+      } else {
+        results = await this.calculateRoutesToDestination(this.currentDestination, this._activeOriginIndices);
+      }
       if (results.length > 0) {
-        this.renderResultsPanel(this.currentDestination, results, this.activeMode);
+        const anchor = this.routeDirection === 'fromOrigin' ? this.currentOrigin : this.currentDestination;
+        this.renderResultsPanel(anchor, results, this.activeMode);
         // Restore multiRouteMode (renderResultsPanel resets it to false)
         this.multiRouteMode = true;
         // Update checkbox state
         const checkbox = document.getElementById('multiRouteToggle');
         if (checkbox) checkbox.checked = true;
         // Re-render mode switch bar (hides policy select)
-        this.renderModeSwitchBar(this.currentDestination, this.currentResults);
+        this.renderModeSwitchBar(anchor, this.currentResults);
         // Re-render list with new data
         this.renderRouteList(this.currentResults, this.activeMode);
         // Clear and re-render map lines
@@ -569,14 +724,20 @@ class RouteManager {
       return;
     }
 
-    // If disabling multi-route in driving mode with an active destination,
+    // If disabling multi-route in driving mode with active routes,
     // recalculate with single-policy to restore normal single-route data
-    if (!enabled && wasEnabled && this.currentDestination && this.activeMode === TRANSPORT_MODES.DRIVING) {
+    if (!enabled && wasEnabled && hasActiveRoute && this.activeMode === TRANSPORT_MODES.DRIVING) {
       showToast('正在恢复单策略路线...', 'info');
 
-      const results = await this.calculateRoutesToDestination(this.currentDestination, this._activeOriginIndices);
+      let results;
+      if (this.routeDirection === 'fromOrigin') {
+        results = await this.calculateRoutesFromOrigin(this.currentOrigin, this._activeDestinationIndices);
+      } else {
+        results = await this.calculateRoutesToDestination(this.currentDestination, this._activeOriginIndices);
+      }
       if (results.length > 0) {
-        this.renderResultsPanel(this.currentDestination, results, this.activeMode);
+        const anchor = this.routeDirection === 'fromOrigin' ? this.currentOrigin : this.currentDestination;
+        this.renderResultsPanel(anchor, results, this.activeMode);
         // Clear and re-render map lines
         this.currentRouteLines.forEach((line) => mapManager.map.remove(line));
         this.currentRouteLines = [];
@@ -662,7 +823,7 @@ class RouteManager {
             hasAnyRoute = true;
             routesToRender.push({
               index,
-              origin: result.origin,
+              origin: this.routeDirection === 'fromOrigin' ? this.currentOrigin : result.origin,
               route,
               pathArray: route.path,
             });
@@ -703,13 +864,18 @@ class RouteManager {
     this._activeOriginIndices = this._activeOriginIndices.filter((i) => i !== removedIndex).map((i) => (i > removedIndex ? i - 1 : i));
   }
 
+  // Adjust destination indices after a location is removed (shift indices down)
+  _adjustDestinationIndicesAfterRemove(removedIndex) {
+    this._activeDestinationIndices = this._activeDestinationIndices.filter((i) => i !== removedIndex).map((i) => (i > removedIndex ? i - 1 : i));
+  }
+
   // Clear route results UI elements (destination display, route list, mode buttons, etc.)
   _clearResultsUI() {
     const destDisplay = document.getElementById('destinationDisplay');
     if (destDisplay) destDisplay.classList.add('hidden');
     const container = document.getElementById('routeResultsList');
     if (container) {
-      container.innerHTML = '<p class="text-sm text-gray-500 italic">点击地图 POI 并设为目的地以计算路线</p>';
+      container.innerHTML = '<p class="text-sm text-gray-500 italic">点击地图 POI 并设为起点/终点以计算路线</p>';
     }
     const modeBtns = document.getElementById('modeBtns');
     if (modeBtns) modeBtns.innerHTML = '';
@@ -719,12 +885,15 @@ class RouteManager {
     if (policySelect) policySelect.classList.add('hidden');
   }
 
-  // Clear all route results: state, map lines, destination marker, UI
+  // Clear all route results: state, map lines, destination/origin marker, UI
   clearRoutes() {
     this.hideRouteDetailPanel();
     this.currentResults = [];
     this.currentDestination = null;
+    this.currentOrigin = null;
     this._activeOriginIndices = [];
+    this._activeDestinationIndices = [];
+    this.routeDirection = 'toDestination';
     this.currentRouteLines.forEach((line) => mapManager.map.remove(line));
     this.currentRouteLines = [];
     this.multiRouteMode = false;
@@ -735,8 +904,9 @@ class RouteManager {
     const checkbox = document.getElementById('multiRouteToggle');
     if (checkbox) checkbox.checked = false;
 
-    // Clear destination marker on map
+    // Clear destination and origin markers on map
     mapManager.clearDestinationMarker();
+    mapManager.clearOriginMarker();
 
     // Clear UI
     this._clearResultsUI();
@@ -762,7 +932,11 @@ class RouteManager {
 
     this.activeMode = activeMode || TRANSPORT_MODES.DRIVING;
     this.currentResults = results;
-    this.currentDestination = destination;
+    if (this.routeDirection === 'fromOrigin') {
+      this.currentOrigin = destination;
+    } else {
+      this.currentDestination = destination;
+    }
 
     // Reset multi-route mode and checkbox for new results
     this.multiRouteMode = false;
@@ -770,12 +944,29 @@ class RouteManager {
     const checkbox = document.getElementById('multiRouteToggle');
     if (checkbox) checkbox.checked = false;
 
-    // Update destination display
+    // Update destination/origin display
     const destDisplay = document.getElementById('destinationDisplay');
     if (destDisplay) {
       destDisplay.classList.remove('hidden');
       const destName = destDisplay.querySelector('#destName');
       const destAddr = destDisplay.querySelector('#destAddr');
+      const destLabel = destDisplay.querySelector('#destLabel');
+
+      if (this.routeDirection === 'fromOrigin') {
+        // Origin mode: green styling
+        destDisplay.className = 'mb-4 p-3 rounded-lg border bg-green-50 border-green-200';
+        if (destLabel) {
+          destLabel.className = 'font-semibold text-green-700 mb-1';
+          destLabel.textContent = '🚩 起始点';
+        }
+      } else {
+        // Destination mode: red styling
+        destDisplay.className = 'mb-4 p-3 rounded-lg border bg-red-50 border-red-200';
+        if (destLabel) {
+          destLabel.className = 'font-semibold text-red-800 mb-1';
+          destLabel.textContent = '📍 目的地';
+        }
+      }
       if (destName) destName.textContent = destination.name;
       if (destAddr) destAddr.textContent = destination.address || '';
     }
@@ -895,6 +1086,8 @@ class RouteManager {
         const originalIndex = results.indexOf(result);
         const routes = result.routes[mode];
         const activeIdx = (result.activeRouteIndex && result.activeRouteIndex[mode]) || 0;
+        const groupName = this.routeDirection === 'fromOrigin' ? result.destination.name : result.origin.name;
+        const directionLabel = this.routeDirection === 'fromOrigin' ? '← 起点' : '→ 目的地';
 
         // In multi-route mode, body visibility is controlled by _expandedGroupIndex
         const isExpanded = !isMulti || this._expandedGroupIndex === originalIndex;
@@ -911,7 +1104,7 @@ class RouteManager {
           <div class="route-sub-card p-2.5 ml-3 border-l-2 rounded-r border-gray-200 bg-gray-50 opacity-60">
             <div class="flex items-center justify-between">
               <span class="text-xs font-medium text-gray-400">${policyLabel}</span>
-              <span class="text-xs text-gray-300">→ 目的地</span>
+              <span class="text-xs text-gray-300">${directionLabel}</span>
             </div>
             <div class="flex items-center mt-1 text-xs text-gray-400">
               <span>该策略无可用路线</span>
@@ -952,7 +1145,7 @@ class RouteManager {
             data-sub-route="${routeIdx}">
             <div class="flex items-center justify-between">
               <span class="text-xs font-medium ${isActive || isHighlighted ? 'text-blue-700' : 'text-gray-700'}">${cardLabel}</span>
-              <span class="text-xs text-gray-400">→ 目的地</span>
+              <span class="text-xs text-gray-400">${directionLabel}</span>
             </div>
             <div class="flex items-center mt-1 text-xs text-gray-600 space-x-3">
               <span class="flex items-center">
@@ -981,7 +1174,7 @@ class RouteManager {
                data-group-index="${originalIndex}">
             <div class="flex items-center min-w-0">
               <span class="text-xs text-gray-400 mr-1.5 fold-icon">${foldIcon}</span>
-              <span class="font-medium text-sm text-gray-800 truncate">${result.origin.name}</span>
+              <span class="font-medium text-sm text-gray-800 truncate">${groupName}</span>
             </div>
             <div class="flex items-center">
               <span class="text-xs text-gray-400 flex-shrink-0">${MODE_NAMES[mode]} ${getRouteCountLabel(routes)}</span>
