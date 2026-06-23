@@ -84,39 +84,31 @@ async function initApp() {
 
     // Listen for location removed events
     window.addEventListener('locationRemoved', (e) => {
-      const { index } = e.detail;
+      const { id } = e.detail;
       locationManager.saveToStorage();
 
-      // Adjust checkbox selection state (shift indices)
-      uiManager._adjustIndicesAfterRemove(index);
-
       // Check if removed location was part of the current route calculation
-      const wasInActiveOrigins = routeManager._activeOriginIndices.includes(index);
-      const wasInActiveDestinations = routeManager._activeDestinationIndices.includes(index);
+      const wasInActiveOrigins = routeManager._activeOriginIds.includes(id);
+      const wasInActiveDestinations = routeManager._activeDestinationIds.includes(id);
 
       if (wasInActiveOrigins || wasInActiveDestinations) {
         // Clear all: map lines + right panel + origin/destination markers
         routeManager.clearRoutes();
-      } else {
-        // Just adjust indices for current route state consistency
-        routeManager._adjustOriginIndicesAfterRemove(index);
-        routeManager._adjustDestinationIndicesAfterRemove(index);
       }
-
-      uiManager.renderMyLocations();
+      // Note: renderMyLocations() is already called inside uiManager.handleRemoveLocation()
     });
 
     // Listen for destination set events
     window.addEventListener('destinationSet', async (e) => {
       const { destination } = e.detail;
 
-      // Get selected (checked) location indices
-      const selectedIndices = uiManager.getSelectedLocationIndices();
-      if (selectedIndices.length === 0) {
+      // Get selected (checked) location ids
+      const selectedIds = uiManager.getSelectedLocationIds();
+      if (selectedIds.length === 0) {
         showToast('请至少选择一个地点', 'warning');
         return;
       }
-      if (selectedIndices.length > 5) {
+      if (selectedIds.length > 5) {
         showToast('地点太多了，最多 5 个', 'warning');
         return;
       }
@@ -139,7 +131,7 @@ async function initApp() {
       mapManager.addDestinationMarker(destination);
 
       // Calculate routes
-      const results = await routeManager.calculateRoutesToDestination(destination, selectedIndices);
+      const results = await routeManager.calculateRoutesToDestination(destination, selectedIds);
       if (results.length > 0) {
         routeManager.renderResultsPanel(destination, results, routeManager.activeMode);
         routeManager.switchTransportMode(routeManager.activeMode);
@@ -150,13 +142,13 @@ async function initApp() {
     window.addEventListener('originSet', async (e) => {
       const { origin } = e.detail;
 
-      // Get selected (checked) location indices
-      const selectedIndices = uiManager.getSelectedLocationIndices();
-      if (selectedIndices.length === 0) {
+      // Get selected (checked) location ids
+      const selectedIds = uiManager.getSelectedLocationIds();
+      if (selectedIds.length === 0) {
         showToast('请至少选择一个地点', 'warning');
         return;
       }
-      if (selectedIndices.length > 5) {
+      if (selectedIds.length > 5) {
         showToast('地点太多了，最多 5 个', 'warning');
         return;
       }
@@ -179,7 +171,7 @@ async function initApp() {
       mapManager.addOriginMarker(origin);
 
       // Calculate routes
-      const results = await routeManager.calculateRoutesFromOrigin(origin, selectedIndices);
+      const results = await routeManager.calculateRoutesFromOrigin(origin, selectedIds);
       if (results.length > 0) {
         routeManager.renderResultsPanel(origin, results, routeManager.activeMode);
         routeManager.switchTransportMode(routeManager.activeMode);

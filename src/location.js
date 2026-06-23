@@ -12,6 +12,7 @@ class LocationManager {
   saveToStorage() {
     try {
       const data = this.locations.map((loc) => ({
+        id: loc.id,
         name: loc.name,
         address: loc.address,
         latitude: loc.latitude,
@@ -25,14 +26,15 @@ class LocationManager {
     }
   }
 
-  // Load locations from localStorage
+  // Load locations from localStorage (only loads data with id field)
   loadFromStorage() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const data = JSON.parse(raw);
       if (Array.isArray(data)) {
-        this.locations = data.slice(0, MAX_LOCATIONS);
+        // Only load entries that have an id (discard legacy data)
+        this.locations = data.filter((loc) => loc.id).slice(0, MAX_LOCATIONS);
       }
     } catch (e) {
       console.warn('从 localStorage 加载地点失败:', e);
@@ -82,13 +84,23 @@ class LocationManager {
       return false;
     }
 
+    // Generate stable short UUID (with fallback for older browsers)
+    const uuid =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+            const r = (Math.random() * 16) | 0;
+            return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+          });
+    location.id = uuid.slice(0, 8);
     this.locations.push(location);
     return true;
   }
 
-  // Remove a location by index
-  removeLocation(index) {
-    if (index >= 0 && index < this.locations.length) {
+  // Remove a location by id
+  removeLocation(id) {
+    const index = this.locations.findIndex((loc) => loc.id === id);
+    if (index !== -1) {
       const removed = this.locations.splice(index, 1)[0];
       return removed;
     }

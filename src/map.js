@@ -6,8 +6,7 @@ const poiRateLimiter = new RateLimiter(500); // Rate limit for POI search on map
 class MapManager {
   constructor() {
     this.map = null;
-    this.markers = [];
-    this.tooltips = [];
+    this.markers = new Map(); // id → { marker, location, tooltip }
     this.routeLines = [];
     this.destinationMarker = null;
     this.destinationTooltip = null;
@@ -139,7 +138,7 @@ class MapManager {
     const clickPixel = clickEvent.pixel;
     const THRESHOLD_PX = 20;
 
-    for (const item of this.markers) {
+    for (const item of this.markers.values()) {
       const markerPixel = this.map.lngLatToContainer(item.marker.getPosition());
       const dx = clickPixel.x - markerPixel.x;
       const dy = clickPixel.y - markerPixel.y;
@@ -396,8 +395,7 @@ class MapManager {
     tooltipInner.addEventListener('mouseleave', hide);
 
     this.map.add(marker);
-    this.markers.push({ marker, location });
-    this.tooltips.push({ el: tooltip, moveHandler });
+    this.markers.set(location.id, { marker, location, tooltip: { el: tooltip, moveHandler } });
   }
 
   addDestinationMarker(location) {
@@ -489,33 +487,31 @@ class MapManager {
     this.map.setCenter(position);
   }
 
-  removeMyLocationMarker(index) {
-    if (index >= 0 && index < this.markers.length) {
-      const item = this.markers[index];
+  removeMyLocationMarker(id) {
+    const item = this.markers.get(id);
+    if (item) {
       this.map.remove(item.marker);
-      this.markers.splice(index, 1);
-      // Clean up associated tooltip
-      if (this.tooltips[index]) {
-        const t = this.tooltips[index];
-        this.map.off('move', t.moveHandler);
-        this.map.off('zoom', t.moveHandler);
-        this.map.off('resize', t.moveHandler);
-        t.el.remove();
-        this.tooltips.splice(index, 1);
+      if (item.tooltip) {
+        this.map.off('move', item.tooltip.moveHandler);
+        this.map.off('zoom', item.tooltip.moveHandler);
+        this.map.off('resize', item.tooltip.moveHandler);
+        item.tooltip.el.remove();
       }
+      this.markers.delete(id);
     }
   }
 
   clearAllMyLocationMarkers() {
-    this.markers.forEach((item) => this.map.remove(item.marker));
-    this.markers = [];
-    this.tooltips.forEach((t) => {
-      this.map.off('move', t.moveHandler);
-      this.map.off('zoom', t.moveHandler);
-      this.map.off('resize', t.moveHandler);
-      t.el.remove();
-    });
-    this.tooltips = [];
+    for (const item of this.markers.values()) {
+      this.map.remove(item.marker);
+      if (item.tooltip) {
+        this.map.off('move', item.tooltip.moveHandler);
+        this.map.off('zoom', item.tooltip.moveHandler);
+        this.map.off('resize', item.tooltip.moveHandler);
+        item.tooltip.el.remove();
+      }
+    }
+    this.markers.clear();
   }
 
   clearDestinationMarker() {

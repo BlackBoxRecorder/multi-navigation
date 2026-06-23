@@ -77,8 +77,8 @@ class RouteManager {
     this._highlightedRoute = null; // { groupIndex, subRouteIdx } in multi-route mode
     this._expandedGroupIndex = null; // accordion: only one group expanded at a time in multi-route mode
     this.activeDrivingPolicy = this._loadDrivingPolicy();
-    this._activeOriginIndices = []; // origin indices used for current route calculation (toDestination)
-    this._activeDestinationIndices = []; // destination indices used for current route calculation (fromOrigin)
+    this._activeOriginIds = []; // origin ids used for current route calculation (toDestination)
+    this._activeDestinationIds = []; // destination ids used for current route calculation (fromOrigin)
   }
 
   // Load driving policy from localStorage, default to LEAST_TIME
@@ -115,7 +115,7 @@ class RouteManager {
     this.hideRouteDetailPanel();
     this.currentDestination = null;
     this.currentResults = [];
-    this._activeOriginIndices = [];
+    this._activeOriginIds = [];
     this.currentOrigin = origin;
     this.routeDirection = 'fromOrigin';
     this.currentRouteLines.forEach((line) => mapManager.map.remove(line));
@@ -132,7 +132,7 @@ class RouteManager {
     this.hideRouteDetailPanel();
     this.currentOrigin = null;
     this.currentResults = [];
-    this._activeDestinationIndices = [];
+    this._activeDestinationIds = [];
     this.currentDestination = destination;
     this.routeDirection = 'toDestination';
     this.currentRouteLines.forEach((line) => mapManager.map.remove(line));
@@ -158,9 +158,9 @@ class RouteManager {
     try {
       let results;
       if (this.routeDirection === 'fromOrigin' && this.currentOrigin) {
-        results = await this.calculateRoutesFromOrigin(this.currentOrigin, this._activeDestinationIndices);
+        results = await this.calculateRoutesFromOrigin(this.currentOrigin, this._activeDestinationIds);
       } else {
-        results = await this.calculateRoutesToDestination(this.currentDestination, this._activeOriginIndices);
+        results = await this.calculateRoutesToDestination(this.currentDestination, this._activeOriginIds);
       }
       if (results.length > 0) {
         this.renderResultsPanel(this.routeDirection === 'fromOrigin' ? this.currentOrigin : this.currentDestination, results, this.activeMode);
@@ -332,7 +332,7 @@ class RouteManager {
   }
 
   // Calculate routes from selected origins (or all my-locations) to a destination
-  async calculateRoutesToDestination(destination, originIndices = null, transportMode = null) {
+  async calculateRoutesToDestination(destination, originIds = null, transportMode = null) {
     const allLocations = locationManager.getAllLocations();
 
     if (allLocations.length === 0) {
@@ -340,14 +340,12 @@ class RouteManager {
       return [];
     }
 
-    // Determine origins: use specified indices or all locations
+    // Determine origins: use specified ids or all locations
     let origins;
-    if (originIndices && originIndices.length > 0) {
-      origins = originIndices.map((i) => allLocations[i]).filter(Boolean);
-      this._activeOriginIndices = [...originIndices];
+    if (originIds && originIds.length > 0) {
+      origins = originIds.map((id) => allLocations.find((l) => l.id === id)).filter(Boolean);
     } else {
       origins = allLocations;
-      this._activeOriginIndices = allLocations.map((_, i) => i);
     }
 
     if (origins.length === 0) {
@@ -357,6 +355,9 @@ class RouteManager {
 
     // Filter out the destination itself from origins
     origins = origins.filter((loc) => Math.abs(loc.latitude - destination.latitude) > 0.0001 || Math.abs(loc.longitude - destination.longitude) > 0.0001);
+
+    // Set active origin ids AFTER filtering (so self-match ids are excluded)
+    this._activeOriginIds = origins.map((l) => l.id);
 
     if (origins.length === 0) {
       showToast('收藏地点与目的地相同，无需计算', 'warning');
@@ -432,7 +433,7 @@ class RouteManager {
   }
 
   // Calculate routes from a single origin to multiple selected destinations
-  async calculateRoutesFromOrigin(origin, destIndices = null) {
+  async calculateRoutesFromOrigin(origin, destIds = null) {
     const allLocations = locationManager.getAllLocations();
 
     if (allLocations.length === 0) {
@@ -441,12 +442,10 @@ class RouteManager {
     }
 
     let destinations;
-    if (destIndices && destIndices.length > 0) {
-      destinations = destIndices.map((i) => allLocations[i]).filter(Boolean);
-      this._activeDestinationIndices = [...destIndices];
+    if (destIds && destIds.length > 0) {
+      destinations = destIds.map((id) => allLocations.find((l) => l.id === id)).filter(Boolean);
     } else {
       destinations = allLocations;
-      this._activeDestinationIndices = allLocations.map((_, i) => i);
     }
 
     if (destinations.length === 0) {
@@ -456,6 +455,9 @@ class RouteManager {
 
     // Filter out destinations that match the origin
     destinations = destinations.filter((loc) => Math.abs(loc.latitude - origin.latitude) > 0.0001 || Math.abs(loc.longitude - origin.longitude) > 0.0001);
+
+    // Set active destination ids AFTER filtering (so self-match ids are excluded)
+    this._activeDestinationIds = destinations.map((l) => l.id);
 
     if (destinations.length === 0) {
       showToast('起点与所有收藏地点重合，无需计算', 'warning');
@@ -700,9 +702,9 @@ class RouteManager {
       // Recalculate with cross-policy (multiRouteMode is now true)
       let results;
       if (this.routeDirection === 'fromOrigin') {
-        results = await this.calculateRoutesFromOrigin(this.currentOrigin, this._activeDestinationIndices);
+        results = await this.calculateRoutesFromOrigin(this.currentOrigin, this._activeDestinationIds);
       } else {
-        results = await this.calculateRoutesToDestination(this.currentDestination, this._activeOriginIndices);
+        results = await this.calculateRoutesToDestination(this.currentDestination, this._activeOriginIds);
       }
       if (results.length > 0) {
         const anchor = this.routeDirection === 'fromOrigin' ? this.currentOrigin : this.currentDestination;
@@ -731,9 +733,9 @@ class RouteManager {
 
       let results;
       if (this.routeDirection === 'fromOrigin') {
-        results = await this.calculateRoutesFromOrigin(this.currentOrigin, this._activeDestinationIndices);
+        results = await this.calculateRoutesFromOrigin(this.currentOrigin, this._activeDestinationIds);
       } else {
-        results = await this.calculateRoutesToDestination(this.currentDestination, this._activeOriginIndices);
+        results = await this.calculateRoutesToDestination(this.currentDestination, this._activeOriginIds);
       }
       if (results.length > 0) {
         const anchor = this.routeDirection === 'fromOrigin' ? this.currentOrigin : this.currentDestination;
@@ -859,16 +861,6 @@ class RouteManager {
     // no-op: native route detail panel renders its own route lines
   }
 
-  // Adjust origin indices after a location is removed (shift indices down)
-  _adjustOriginIndicesAfterRemove(removedIndex) {
-    this._activeOriginIndices = this._activeOriginIndices.filter((i) => i !== removedIndex).map((i) => (i > removedIndex ? i - 1 : i));
-  }
-
-  // Adjust destination indices after a location is removed (shift indices down)
-  _adjustDestinationIndicesAfterRemove(removedIndex) {
-    this._activeDestinationIndices = this._activeDestinationIndices.filter((i) => i !== removedIndex).map((i) => (i > removedIndex ? i - 1 : i));
-  }
-
   // Clear route results UI elements (destination display, route list, mode buttons, etc.)
   _clearResultsUI() {
     const destDisplay = document.getElementById('destinationDisplay');
@@ -891,8 +883,8 @@ class RouteManager {
     this.currentResults = [];
     this.currentDestination = null;
     this.currentOrigin = null;
-    this._activeOriginIndices = [];
-    this._activeDestinationIndices = [];
+    this._activeOriginIds = [];
+    this._activeDestinationIds = [];
     this.routeDirection = 'toDestination';
     this.currentRouteLines.forEach((line) => mapManager.map.remove(line));
     this.currentRouteLines = [];

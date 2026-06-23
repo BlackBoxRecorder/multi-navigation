@@ -9,7 +9,7 @@ class UIManager {
     this.routeResultsList = document.getElementById('routeResultsList');
     this.destinationDisplay = document.getElementById('destinationDisplay');
     this.clearAllBtn = document.getElementById('clearAllLocationsBtn');
-    this._selectedIndices = new Set(); // persisted checkbox selection state
+    this._selectedIds = new Set(); // persisted checkbox selection state (location ids)
 
     this.bindEvents();
     this.renderMyLocations();
@@ -51,7 +51,7 @@ class UIManager {
     }
 
     this.myLocationsList.innerHTML = locations
-      .map((loc, index) => {
+      .map((loc) => {
         // Address dedup: if name starts with address, trim the prefix
         let displayName = loc.name;
         if (loc.address && loc.name.startsWith(loc.address)) {
@@ -60,13 +60,13 @@ class UIManager {
 
         return `
       <div class="flex items-center p-3 border border-gray-200 rounded-lg bg-white hover:border-blue-200 transition-colors">
-        <input type="checkbox" class="my-loc-checkbox flex-shrink-0 w-4 h-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400" data-index="${index}" ${this._selectedIndices.has(index) ? 'checked' : ''}>
+        <input type="checkbox" class="my-loc-checkbox flex-shrink-0 w-4 h-4 text-blue-500 border-gray-300 rounded focus:ring-blue-400" data-id="${loc.id}" ${this._selectedIds.has(loc.id) ? 'checked' : ''}>
         <div class="flex-1 min-w-0 ml-2 mr-2">
           <p class="font-medium text-sm text-gray-800 truncate">${displayName}</p>
           <p class="text-xs text-gray-500 mt-0.5 truncate">${loc.address || '地址不详'}</p>
         </div>
         <button class="remove-location-btn flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors p-1"
-                data-index="${index}"
+                data-id="${loc.id}"
                 title="删除">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -81,36 +81,39 @@ class UIManager {
     this.myLocationsList.querySelectorAll('.remove-location-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const index = parseInt(e.currentTarget.dataset.index);
-        this.handleRemoveLocation(index);
+        const id = e.currentTarget.dataset.id;
+        this.handleRemoveLocation(id);
       });
     });
 
-    // Bind checkbox change events to sync _selectedIndices
+    // Bind checkbox change events to sync _selectedIds
     this.myLocationsList.querySelectorAll('.my-loc-checkbox').forEach((checkbox) => {
       checkbox.addEventListener('change', (e) => {
-        const idx = parseInt(e.target.dataset.index);
+        const id = e.target.dataset.id;
         if (e.target.checked) {
-          this._selectedIndices.add(idx);
+          this._selectedIds.add(id);
         } else {
-          this._selectedIndices.delete(idx);
+          this._selectedIds.delete(id);
         }
       });
     });
   }
 
   // Handle location removal
-  handleRemoveLocation(index) {
-    const removed = locationManager.removeLocation(index);
+  handleRemoveLocation(id) {
+    const removed = locationManager.removeLocation(id);
 
     if (removed) {
+      // Clean up selection state to prevent stale id leakage
+      this._selectedIds.delete(id);
+
       // Remove marker from map
-      mapManager.removeMyLocationMarker(index);
+      mapManager.removeMyLocationMarker(id);
 
       // Dispatch event
       window.dispatchEvent(
         new CustomEvent('locationRemoved', {
-          detail: { index, location: removed },
+          detail: { id, location: removed },
         }),
       );
 
@@ -119,9 +122,11 @@ class UIManager {
     }
   }
 
-  // Get indices of selected (checked) locations
-  getSelectedLocationIndices() {
-    return Array.from(this._selectedIndices).sort((a, b) => a - b);
+  // Get ids of selected (checked) locations, sorted by list order
+  getSelectedLocationIds() {
+    const locations = locationManager.getAllLocations();
+    const order = new Map(locations.map((l, i) => [l.id, i]));
+    return Array.from(this._selectedIds).sort((a, b) => (order.get(a) ?? Infinity) - (order.get(b) ?? Infinity));
   }
 
   // Handle clear all button click
@@ -145,7 +150,7 @@ class UIManager {
     locationManager.clearAll();
 
     // Clear checkbox state
-    this._selectedIndices.clear();
+    this._selectedIds.clear();
 
     // Re-render
     this.renderMyLocations();
@@ -217,17 +222,6 @@ class UIManager {
         });
       });
     });
-  }
-
-  // Adjust selected indices when a location is removed
-  _adjustIndicesAfterRemove(removedIndex) {
-    const newSet = new Set();
-    for (const idx of this._selectedIndices) {
-      if (idx > removedIndex) newSet.add(idx - 1);
-      else if (idx < removedIndex) newSet.add(idx);
-      // idx === removedIndex: drop it
-    }
-    this._selectedIndices = newSet;
   }
 
   // Handle clear routes button click
