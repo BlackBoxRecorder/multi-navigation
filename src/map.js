@@ -1,5 +1,6 @@
 import { RateLimiter, showToast } from './utils.js';
 import { locationManager } from './location.js';
+import { amapReady } from './amap-loader.js';
 
 const poiRateLimiter = new RateLimiter(500); // Rate limit for POI search on map click
 
@@ -15,7 +16,8 @@ class MapManager {
     this.poiInfoWindow = null;
   }
 
-  init(containerId = 'mapContainer') {
+  async init(containerId = 'mapContainer') {
+    await amapReady;
     return new Promise((resolve, reject) => {
       try {
         this.map = new AMap.Map(containerId, {

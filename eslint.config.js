@@ -11,6 +11,9 @@ export default [
       globals: {
         ...globals.browser,
         AMap: 'readonly',
+        // Vite define 注入的编译时常量
+        __AMAP_KEY__: 'readonly',
+        __AMAP_SECURITY_CODE__: 'readonly',
       },
     },
     rules: {
@@ -20,6 +23,15 @@ export default [
       eqeqeq: ['error', 'always'],
       'prefer-const': 'warn',
       'no-var': 'error',
+    },
+  },
+  // Node.js globals for config files (vite.config.js etc.)
+  {
+    files: ['*.config.js', '*.config.mjs'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
     },
   },
   {

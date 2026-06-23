@@ -18,5 +18,8 @@
     "globals": "^17.6.0",
     "prettier": "^3.8.4",
     "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "@amap/amap-jsapi-loader": "^1.0.1"
   }
 }

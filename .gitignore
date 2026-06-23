@@ -9,8 +9,7 @@ dist-ssr/
 build/
 *.local
 
-# Environment files
-.env
+# Environment files (only ignore local overrides, .env template is committed)
 .env.local
 .env.*.local
 
