@@ -4,6 +4,9 @@ import { showToast } from './utils.js';
 import { routeManager } from './route.js';
 import { locationManager } from './location.js';
 
+/**
+ * Initialize resize handles for the sidebar panels.
+ */
 function initResizeHandles() {
   const layout = document.getElementById('mainLayout');
   const leftPanel = document.getElementById('leftPanel');
@@ -86,35 +89,18 @@ async function initApp() {
 
       // Adjust checkbox selection state (shift indices)
       uiManager._adjustIndicesAfterRemove(index);
-      // Adjust route origin indices
-      routeManager._adjustOriginIndicesAfterRemove(index);
-      routeManager._adjustDestinationIndicesAfterRemove(index);
 
-      // If there's still an active route, recalculate with remaining indices
-      if (routeManager.routeDirection === 'fromOrigin' && routeManager.currentOrigin && routeManager._activeDestinationIndices.length > 0) {
-        routeManager.calculateRoutesFromOrigin(routeManager.currentOrigin, routeManager._activeDestinationIndices).then((results) => {
-          if (results.length > 0) {
-            routeManager.renderResultsPanel(routeManager.currentOrigin, results, routeManager.activeMode);
-            routeManager.switchTransportMode(routeManager.activeMode);
-          } else {
-            routeManager.clearRoutes();
-          }
-        });
-      } else if (routeManager.currentDestination && routeManager._activeOriginIndices.length > 0) {
-        routeManager.calculateRoutesToDestination(routeManager.currentDestination, routeManager._activeOriginIndices).then((results) => {
-          if (results.length > 0) {
-            routeManager.renderResultsPanel(routeManager.currentDestination, results, routeManager.activeMode);
-            routeManager.switchTransportMode(routeManager.activeMode);
-          } else {
-            routeManager.clearRoutes();
-          }
-        });
-      } else if (
-        (routeManager.routeDirection === 'fromOrigin' && routeManager._activeDestinationIndices.length === 0) ||
-        (routeManager.routeDirection === 'toDestination' && routeManager._activeOriginIndices.length === 0)
-      ) {
-        // No remaining active indices → clear routes
+      // Check if removed location was part of the current route calculation
+      const wasInActiveOrigins = routeManager._activeOriginIndices.includes(index);
+      const wasInActiveDestinations = routeManager._activeDestinationIndices.includes(index);
+
+      if (wasInActiveOrigins || wasInActiveDestinations) {
+        // Clear all: map lines + right panel + origin/destination markers
         routeManager.clearRoutes();
+      } else {
+        // Just adjust indices for current route state consistency
+        routeManager._adjustOriginIndicesAfterRemove(index);
+        routeManager._adjustDestinationIndicesAfterRemove(index);
       }
 
       uiManager.renderMyLocations();

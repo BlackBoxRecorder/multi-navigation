@@ -90,7 +90,6 @@ class LocationManager {
   removeLocation(index) {
     if (index >= 0 && index < this.locations.length) {
       const removed = this.locations.splice(index, 1)[0];
-      showToast(`已删除: ${removed.name}`, 'info');
       return removed;
     }
     return null;

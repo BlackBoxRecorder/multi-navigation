@@ -661,11 +661,6 @@ class MapManager {
     this.routeLines = [];
   }
 
-  // Getter for destination
-  getDestination() {
-    return this.destinationMarker ? this.poiInfoWindow?.poiData || null : null;
-  }
-
   // Notify map that container size changed (e.g. sidebar resize)
   refreshSize() {
     window.dispatchEvent(new Event('resize'));
